@@ -300,11 +300,8 @@ fn double_clicking_fit_attribute_text_opens_the_editor() {
     });
     let at = Vec2::new(150.0, 20.5);
     assert!(drawn_box(&app, reference, "NO").contains(at), "the click is on the drawn text");
-    {
-        let d = app.session.doc().unwrap();
-        let estimate = cadcraft_engine::doc::entity_bounds(d, d.entity(reference).unwrap(), 0);
-        assert!(!estimate.contains(at), "the click is outside the estimated box, which used to reject it");
-    }
+    // Since #3506 the extents of Fit text span its two points too, so the reference's bounds now
+    // reach the click as well; what matters here is that the double-click finds the attribute.
     assert_eq!(picked_kind(&app, at), None, "no object is picked there");
     app.session.execute("view.set", &json!({ "center": [150, 20], "height": 30 })).unwrap();
     app.canvas.zoom_pending = false;

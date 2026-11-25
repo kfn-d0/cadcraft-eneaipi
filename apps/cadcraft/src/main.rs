@@ -621,6 +621,13 @@ fn main() -> eframe::Result {
             if let Some(ui) = restored {
                 app.ui = ui;
             }
+            // First run on Windows and Linux: the Windows layout (Ribbon above the drawing,
+            // Properties docked left), as AutoCAD users expect. Window ▸ Mac Layout (Tool Sets)
+            // switches back, and the choice is kept from then on.
+            #[cfg(not(target_os = "macos"))]
+            if !app.ui.pc_layout_applied {
+                cadcraft_ui_egui::ribbon::apply_pc_layout(&mut app);
+            }
             app.set_system_cursor_default(vars.system_cursor == Switch::On);
             // Native Wayland answers a clipboard request asynchronously; every other backend in the
             // next frame (egui-winit).

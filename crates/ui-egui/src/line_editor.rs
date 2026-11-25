@@ -14,7 +14,7 @@ use crate::theme::Tokens;
 
 /// Smallest and largest size of the text in the box, in points: readable at any zoom.
 const MIN_PX: f32 = 13.0;
-const MAX_PX: f32 = 36.0;
+const MAX_PX: f32 = 48.0;
 /// The box's margin around the text, in points.
 const MARGIN: f32 = 3.0;
 

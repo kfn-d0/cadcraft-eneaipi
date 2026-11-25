@@ -50,6 +50,7 @@ mod space_at_options;
 mod status_bar_toggles;
 mod style_dialogs;
 mod system_cursor;
+mod table_double_click;
 mod text_double_click;
 mod text_edit_in_place;
 mod toolsets_gear;

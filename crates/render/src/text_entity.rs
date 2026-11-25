@@ -17,6 +17,13 @@ pub fn place_text_entity(d: &Drawing, t: &cadcraft_doc::Text, value: &str) -> (c
     cadcraft_fonts::place(&font, value, &params)
 }
 
+/// [`place_text_entity`], with the box a pick tests as its four corners, turned with the text:
+/// baseline to text height, lower only where letters descend.
+pub fn place_text_entity_corners(d: &Drawing, t: &cadcraft_doc::Text, value: &str) -> (cadcraft_fonts::Shaped, [cadcraft_geom::Vec2; 4]) {
+    let (font, params) = text_params(d, t);
+    cadcraft_fonts::place_pick_corners(&font, value, &params)
+}
+
 /// The dimensions used to display a two-point TEXT, ATTRIB or ATTDEF, for file writers.
 pub fn fitted_text_entity(d: &Drawing, t: &cadcraft_doc::Text, value: &str) -> cadcraft_doc::Text {
     let (font, params) = text_params(d, t);

@@ -11,6 +11,50 @@ fn draws_a_block(e: &Entity) -> bool {
     matches!(&e.kind, EntityKind::Unknown(u) if u.graphics.iter().any(|g| matches!(g.kind, EntityKind::Insert(_))))
 }
 
+/// The box a TEXT or ATTDEF is picked in: the four corners of its laid-out line, measured with
+/// the font it draws with and turned with the text, at the size it draws at the current
+/// annotation scale. The document's extents estimate a TEXT's width from its character count
+/// and take the axis-aligned box around it, so a pick beside a narrow or rotated text found it
+/// while a pick on the ends of a wide one missed it. `None` for any other entity, blank text,
+/// text the current annotation scale hides and text without a finite layout.
+fn text_quad(d: &Drawing, e: &Entity) -> Option<[Vec2; 4]> {
+    if !matches!(e.kind, EntityKind::Text(_) | EntityKind::AttDef(_)) {
+        return None;
+    }
+    let scaled;
+    let e = match d.anno_draw(e) {
+        AnnoDraw::Hidden => return None,
+        AnnoDraw::Plain => e,
+        AnnoDraw::Scaled(f) => {
+            scaled = anno_scaled(e, f);
+            &scaled
+        }
+    };
+    let (t, value) = match &e.kind {
+        EntityKind::Text(t) => (t, t.value.as_str()),
+        EntityKind::AttDef(a) => (&a.text, a.tag.as_str()),
+        _ => return None,
+    };
+    if value.trim().is_empty() {
+        return None;
+    }
+    // A TEXT that follows the layout orientation draws upright, as the renderer draws it.
+    let upright;
+    let t = if matches!(e.kind, EntityKind::Text(_)) && e.common.matches_layout_orientation() && t.rotation != 0.0 {
+        upright = cadcraft_doc::Text { rotation: 0.0, ..t.clone() };
+        &upright
+    } else {
+        t
+    };
+    let (_, quad) = cadcraft_render::place_text_entity_corners(d, t, value);
+    quad.iter().all(|q| q.is_finite()).then_some(quad)
+}
+
+/// Whether `p` is inside a TEXT's or ATTDEF's turned box ([`text_quad`]).
+fn in_text_quad(d: &Drawing, e: &Entity, p: Vec2) -> bool {
+    text_quad(d, e).is_some_and(|q| point_in_polygon(&q, p))
+}
+
 /// Polylines approximating an entity for hit testing, tessellated at `tol`.
 pub fn hit_polylines(d: &Drawing, e: &Entity, tol: f64) -> Vec<Vec<Vec2>> {
     if d.anno_draw(e) == AnnoDraw::Hidden {
@@ -79,6 +123,10 @@ pub fn hit_polylines(d: &Drawing, e: &Entity, tol: f64) -> Vec<Vec<Vec2>> {
         | EntityKind::Unknown(_)
             if !matches!(e.kind, EntityKind::Unknown(_)) || draws_a_block(e) =>
         {
+            // A TEXT or ATTDEF is hit on its turned box, not the axis-aligned one around it.
+            if matches!(e.kind, EntityKind::Text(_) | EntityKind::AttDef(_)) {
+                return text_quad(d, e).map(|c| vec![c[0], c[1], c[2], c[3], c[0]]).into_iter().collect();
+            }
             // Text-like objects are hit inside their box; a dimension kept as read that draws its
             // block, like a dimension.
             let b = select_bounds(d, e, None);
@@ -195,8 +243,8 @@ fn dist_to_polyline(pts: &[Vec2], p: Vec2) -> f64 {
 pub fn entity_distance(d: &Drawing, e: &Entity, p: Vec2, tol: f64) -> f64 {
     let polys = hit_polylines(d, e, tol);
     let mut best = polys.iter().map(|pl| dist_to_polyline(pl, p)).fold(f64::INFINITY, f64::min);
-    let filled = matches!(e.kind, EntityKind::Text(_) | EntityKind::AttDef(_) | EntityKind::Table(_)) || matches!(e.kind, EntityKind::Tolerance(_));
-    if (filled && entity_bounds(d, e, 0).contains(p)) || in_blank_mtext(d, e, p) || in_text(d, e, p) {
+    let filled = matches!(e.kind, EntityKind::Table(_) | EntityKind::Tolerance(_));
+    if (filled && entity_bounds(d, e, 0).contains(p)) || in_text_quad(d, e, p) || in_blank_mtext(d, e, p) || in_text(d, e, p) {
         best = 0.0;
     }
     // A solid hatch fills its loops with odd parity under its island style, as it is drawn, not
@@ -239,7 +287,7 @@ fn raw_in_text(d: &Drawing, e: &Entity, p: Vec2) -> bool {
                 let p = p - dm.insertion_point.xy();
                 blk.entities.iter().any(|be| match &be.kind {
                     EntityKind::MText(t) => in_mtext(d, t, p),
-                    EntityKind::Text(_) => entity_bounds(d, be, 0).contains(p),
+                    EntityKind::Text(_) => in_text_quad(d, be, p),
                     _ => false,
                 })
             }
@@ -362,6 +410,8 @@ pub(crate) fn select_bounds_cached<'a>(d: &'a Drawing, e: &Entity, known: Option
                 }
             }
         }
+        // The box around the laid-out line, so the spatial index and windows agree with a pick.
+        EntityKind::Text(_) | EntityKind::AttDef(_) => known.unwrap_or_else(|| text_quad(d, e).map_or(Bounds2::EMPTY, Bounds2::from_points)),
         _ => bounds_of(d, e, known, cache),
     }
 }

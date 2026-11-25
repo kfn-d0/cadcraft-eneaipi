@@ -678,6 +678,14 @@ pub fn fit_params(font: &TextFont, s: &str, p: &TextParams) -> TextParams {
 /// Place a single-line TEXT in world coordinates with any font. Returns the shaped text and its
 /// bounding box.
 pub fn place(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, Bounds2) {
+    let (sh, corners) = place_corners(font, s, p);
+    (sh, Bounds2::from_points(corners))
+}
+
+/// [`place`], with the text's box as its four corners in world coordinates (baseline start,
+/// baseline end, top end, top start before mirroring), turned with the text: the box a pick
+/// tests, which for rotated text is much tighter than the axis-aligned bounds around it.
+pub fn place_corners(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, [Vec2; 4]) {
     let fitted = fit_params(font, s, p);
     let p = &fitted;
     let height = if p.height > 0.0 && p.height.is_finite() { p.height } else { 1.0 };
@@ -699,8 +707,38 @@ pub fn place(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, Bounds2) {
     };
     sh.map(xf);
     let depth = bottom_depth(font, height);
-    let bb = Bounds2::from_points([Vec2::new(0.0, -depth), Vec2::new(width, -depth), Vec2::new(width, height), Vec2::new(0.0, height)].map(xf));
-    (sh, bb)
+    let corners = [Vec2::new(0.0, -depth), Vec2::new(width, -depth), Vec2::new(width, height), Vec2::new(0.0, height)].map(xf);
+    (sh, corners)
+}
+
+/// The box a pick tests for a single-line TEXT: as [`place_corners`], but from the baseline to the
+/// text height, reaching below the baseline only as far as the letters do (a line of capitals has
+/// nothing there). Corners in world coordinates, turned with the text.
+pub fn place_pick_corners(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, [Vec2; 4]) {
+    let (sh, c) = place_corners(font, s, p);
+    // The box's own frame: along the baseline (c[0] → c[1]) and up (c[0] → c[3]).
+    let (along, up) = (c[1] - c[0], c[3] - c[0]);
+    let (la, lu) = (along.len(), up.len());
+    if !(la > 1e-12 && lu > 1e-12 && la.is_finite() && lu.is_finite()) {
+        return (sh, c);
+    }
+    let uu = up * (1.0 / lu);
+    let fitted = fit_params(font, s, p).height;
+    let height = if fitted > 0.0 && fitted.is_finite() { fitted } else { 1.0 };
+    // How far the box reaches below the baseline.
+    let depth = (lu - height).max(0.0);
+    let lowest = sh
+        .strokes
+        .iter()
+        .flatten()
+        .chain(sh.glyphs.iter().flatten().flatten())
+        .map(|q| (*q - c[0]).dot(uu))
+        .filter(|v| v.is_finite())
+        .fold(f64::INFINITY, f64::min);
+    // Height above the bottom edge where the box starts: the baseline, or the lowest ink below it.
+    let base = if lowest.is_finite() { lowest.min(depth).max(0.0) } else { depth.max(0.0) };
+    let lift = uu * base;
+    (sh, [c[0] + lift, c[1] + lift, c[2], c[3]])
 }
 
 /// Place a single-line TEXT in world coordinates with the stroke font. Returns strokes and the

@@ -27,9 +27,9 @@ fn app() -> CadApp {
     app
 }
 
-/// INSERT of T typed, answered up to its attribute values.
+/// -INSERT of T typed (INSERT opens the Blocks palette), answered up to its attribute values.
 fn insert(app: &mut CadApp) {
-    app.start("insert");
+    app.start("-insert");
     app.cmdline("T");
     for i in [Input::Point(Vec2::new(50.0, 0.0)), Input::Enter, Input::Enter, Input::Enter] {
         app.session.input(i).unwrap();
@@ -113,7 +113,7 @@ fn pointer(h: &mut Harness<'static, CadApp>, pos: egui::Pos2, pressed: bool) {
 fn replacement(tx: &std::sync::mpsc::Sender<ControlRequest>, confirmation: Option<(&str, Value)>) -> Vec<cadcraft_ui_egui::control::PendingReply> {
     let mut requests = vec![
         ("cmdline.key", json!({ "key": "escape" })),
-        ("cmdline.input", json!({ "text": "insert" })),
+        ("cmdline.input", json!({ "text": "-insert" })),
         ("cmdline.input", json!({ "text": "T" })),
         ("cmdline.input", json!({ "text": "50,0" })),
         ("cmdline.input", json!({ "text": "" })),
@@ -371,9 +371,11 @@ fn a_typed_or_menu_insert_still_opens_the_dialog() {
     h.get_by_label("Edit Attributes");
     assert!(h.state().session.attribute_entry().is_some());
 
-    // Started from Insert ▸ Block….
+    // Insert ▸ Block… opens the Blocks palette; started as the interface starts a command.
     let mut a = app();
     menus::activate(&mut a, "insert");
+    assert!(!a.session.prompting(), "the menu shows the Blocks palette instead of asking for a name");
+    a.start("-insert");
     a.cmdline("T");
     for i in [Input::Point(Vec2::new(50.0, 0.0)), Input::Enter, Input::Enter, Input::Enter] {
         a.session.input(i).unwrap();

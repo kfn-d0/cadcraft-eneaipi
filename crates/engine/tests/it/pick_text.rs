@@ -613,3 +613,42 @@ fn mleader_window_selection_excludes_insertion_point() {
         "INS snap should be found at block insertion point: {cands:?}"
     );
 }
+
+/// The single-line TEXT last drawn and the ink of its letters, as the renderer lays them out.
+fn single_line_text(s: &Session) -> (Handle, Bounds2) {
+    let d = s.doc().unwrap();
+    let e = d.model.iter().filter(|e| matches!(e.kind, EntityKind::Text(_))).last().unwrap();
+    let EntityKind::Text(t) = &e.kind else { unreachable!() };
+    let (sh, _) = render::place_text_entity(d, t, &t.value);
+    (e.handle, Bounds2::from_points(sh.strokes.iter().flatten().chain(sh.glyphs.iter().flatten().flatten()).copied()))
+}
+
+#[test]
+fn narrow_text_is_not_picked_past_its_last_letter() {
+    let mut s = Session::new();
+    s.execute("text", &json!({"at": [0, 0], "text": "iiiiiiiiii", "height": 10})).unwrap();
+    let (h, ink) = single_line_text(&s);
+    let d = s.doc().unwrap();
+    let mid = (ink.min.y + ink.max.y) / 2.0;
+    assert_eq!(pick(d, &Space::Model, Vec2::new(ink.center().x, mid), 0.5), Some(h), "on its letters");
+    // The old estimate (0.9 × height per character) reached far past narrow letters.
+    let past = ink.max.x + 20.0;
+    assert!(past < 0.9 * 10.0 * 10.0, "the probe lies inside the old estimate");
+    assert_eq!(pick(d, &Space::Model, Vec2::new(past, mid), 0.5), None, "beyond the last letter");
+}
+
+#[test]
+fn rotated_text_is_picked_inside_its_turned_box_only() {
+    let mut s = Session::new();
+    s.execute("text", &json!({"at": [0, 0], "text": "ROTATED LABEL", "height": 5, "rotation": 45})).unwrap();
+    let (h, ink) = single_line_text(&s);
+    let d = s.doc().unwrap();
+    assert_eq!(pick(d, &Space::Model, ink.center(), 0.5), Some(h), "the middle of the turned line");
+    // The corners of the axis-aligned box around a 45° line are far from its letters.
+    for corner in [Vec2::new(ink.min.x + 2.0, ink.max.y - 2.0), Vec2::new(ink.max.x - 2.0, ink.min.y + 2.0)] {
+        assert_eq!(pick(d, &Space::Model, corner, 0.5), None, "empty corner {corner:?} of the box around the text");
+    }
+    // A window around the whole line still selects it.
+    let w = select_window(d, &Space::Model, Bounds2::new(ink.min - Vec2::new(3.0, 3.0), ink.max + Vec2::new(3.0, 3.0)), false);
+    assert!(w.contains(&h));
+}

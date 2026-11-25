@@ -579,6 +579,10 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
             app.ui.dialog = Some("qselect".into());
             Ok(Value::Null)
         }
+        // Typed, from the Insert menu or the tool bar (no parameters): INSERT opens the Blocks
+        // palette, which lists the drawing's blocks with previews and places the one clicked, as
+        // AutoCAD's INSERT does. -INSERT keeps the command-line prompts and JSON calls the JSON form.
+        "insert" | "i" | "ddinsert" if params.is_null() => crate::blocks_palette::open_from_insert(app),
         "units" | "un" if params.is_null() => {
             app.ui.dialog = Some("units".into());
             Ok(Value::Null)
@@ -1274,5 +1278,32 @@ mod units_dialog_tests {
         assert!(app.ui.dialog.is_none(), "JSON calls never open dialogs");
         let h = &app.session.doc().unwrap().header;
         assert_eq!((h.i64("LUNITS", 0), h.i64("LUPREC", 0), h.i64("INSUNITS", 0)), (4, 3, 4));
+    }
+}
+
+#[cfg(test)]
+mod insert_opens_blocks_palette_tests {
+    use cadcraft_engine::Session;
+    use serde_json::json;
+
+    use crate::docking::Panel;
+    use crate::{CadApp, Services};
+
+    #[test]
+    fn typed_insert_opens_the_blocks_palette_and_dash_insert_asks_for_a_name() {
+        let mut app = CadApp::new(Session::new(), Services::default());
+        app.session.execute("line", &json!({ "points": [[0, 0], [4, 0]] })).unwrap();
+        let handles: Vec<String> = app.session.doc().unwrap().model.iter().map(|e| e.handle.hex()).collect();
+        app.session.execute("block", &json!({ "name": "BOLT", "base": [0, 0], "handles": handles, "keep": "delete" })).unwrap();
+        assert!(!app.ui.docking.layout.contains(&Panel::Blocks));
+        app.cmdline("INSERT");
+        assert!(app.ui.docking.layout.contains(&Panel::Blocks), "INSERT shows the drawing's blocks");
+        assert!(!app.session.prompting(), "no block name is asked for: {}", app.session.prompt_text());
+        app.cmdline("-INSERT");
+        assert!(app.session.prompt_text().contains("Enter block name"), "{}", app.session.prompt_text());
+        app.session.cancel();
+        // JSON calls keep placing the block directly.
+        app.run("insert", json!({ "name": "BOLT", "at": [10, 10] })).unwrap();
+        assert!(app.session.doc().unwrap().model.iter().any(|e| matches!(e.kind, cadcraft_engine::doc::EntityKind::Insert(_))));
     }
 }

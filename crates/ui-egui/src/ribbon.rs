@@ -126,6 +126,7 @@ const LEADERS: &[Cmd] = &[
 const INSERTS: &[Cmd] = &[c("insert", "Insert", Icon::Insert), c("ui.dialog.blocks", "Blocks Palette", Icon::Blocks)];
 const ATT_EDITS: &[Cmd] = &[n("eattedit", "Single"), n("-attedit", "Multiple"), n("attsync", "Synchronize")];
 const MEASURES: &[Cmd] = &[
+    n("measure.quick", "Quick"),
     c("measuregeom", "Distance", Icon::Distance),
     n("measuregeom.radius", "Radius"),
     n("measuregeom.angle", "Angle"),

@@ -61,7 +61,7 @@ fn right_click_settings_are_checked_and_survive_a_restart() {
     let all = a.run("options", json!({})).unwrap();
     assert_eq!(
         (all["rightClickDuration"].clone(), all["rightClickDefault"].clone(), all["rightClickEdit"].clone(), all["rightClickCommand"].clone()),
-        (json!(250), json!("menu"), json!("menu"), json!("menu"))
+        (json!(250), json!("menu"), json!("menu"), json!("menuWithOptions"))
     );
     let r = a
         .run(
@@ -116,13 +116,13 @@ fn an_idle_right_click_can_repeat_the_last_command() {
     assert!(text.contains("Erase"), "the shortcut menu opens:\n{text}");
 }
 
-/// With the time-sensitive right-click on (the default), Default and Edit modes don't decide, as
+/// With the time-sensitive right-click on (off by default), Default and Edit modes don't decide, as
 /// in AutoCAD: a quick click is Enter (#1387) and a longer one opens the shortcut menu, even with
 /// both set to repeat the last command.
 #[test]
 fn the_time_sensitive_right_click_decides_between_commands_too() {
     let mut a = app();
-    a.run("options", json!({"rightClickDefault": "repeat", "rightClickEdit": "repeat"})).unwrap();
+    a.run("options", json!({"timeSensitiveRightClick": true, "rightClickDefault": "repeat", "rightClickEdit": "repeat"})).unwrap();
     a.cmdline("circle 0,0 5");
     assert!(!a.session.prompting());
     let ctx = egui::Context::default();
@@ -138,7 +138,7 @@ fn command_mode_and_click_duration_decide_enter_or_the_menu() {
 
     // A longer duration: a 0.5 s click is still Enter.
     let mut a = app();
-    a.run("options", json!({"rightClickDuration": 1000})).unwrap();
+    a.run("options", json!({"timeSensitiveRightClick": true, "rightClickDuration": 1000})).unwrap();
     frame(&mut a, &ctx, Vec::new(), 0.0);
     a.cmdline("LINE 0,0 10,0");
     right_click(&mut a, &ctx, 0.1, 0.5);
@@ -190,6 +190,8 @@ fn shot(h: &mut Harness<'static, CadApp>, name: &str) {
 #[test]
 fn the_customization_window_sets_every_mode() {
     let mut a = app();
+    // Start from the time-sensitive right-click on, to turn it off in the window.
+    a.options.time_sensitive_right_click = true;
     menus::activate(&mut a, "options");
     a.ui.dialog = Some("options:preferences".into());
     let mut h = harness(a);
@@ -217,9 +219,11 @@ fn the_customization_window_sets_every_mode() {
     assert_eq!(h.state().options.right_click_default, IdleClick::Repeat);
     assert_eq!(h.state().options.right_click_edit, IdleClick::Menu);
 
-    h.get_by_label("Shortcut Menu: enabled when command options are present").click();
-    h.run_steps(3);
+    // Command mode starts at its default (the menu when the prompt has options).
     assert_eq!(h.state().options.right_click_command, CommandClick::MenuWithOptions);
+    h.get_by_label("Shortcut Menu: always enabled").click();
+    h.run_steps(3);
+    assert_eq!(h.state().options.right_click_command, CommandClick::Menu);
 
     let unnamed = h.unnamed_widgets();
     assert!(unnamed.is_empty(), "unnamed controls: {unnamed:?}");
@@ -230,4 +234,23 @@ fn the_customization_window_sets_every_mode() {
     h.run_steps(3);
     assert!(h.query_by_label("Longer click duration:").is_none());
     assert_eq!(h.state().ui.dialog.as_deref(), Some("options:preferences"));
+}
+
+/// With the defaults (as AutoCAD ships them), a quick right-click on a selection opens the
+/// shortcut menu with its editing commands; it does not repeat the last command.
+#[test]
+fn a_quick_right_click_on_a_selection_opens_the_menu_by_default() {
+    let mut a = app();
+    a.cmdline("circle 0,0 5");
+    a.run("selectall", json!({})).unwrap();
+    assert!(!a.session.prompting() && !a.session.selection().is_empty());
+    let ctx = egui::Context::default();
+    frame(&mut a, &ctx, Vec::new(), 0.0);
+    let text = right_click(&mut a, &ctx, 0.1, 0.05);
+    assert!(!a.session.prompting(), "CIRCLE is not repeated: {}", a.session.prompt_text());
+    assert!(
+        text.contains("Erase"),
+        "the shortcut menu opens:
+{text}"
+    );
 }

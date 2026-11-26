@@ -167,11 +167,15 @@ impl Default for UiOptions {
             paper_background: None,
             snap_marker_size: theme::SNAP_MARKER,
             selection_color: None,
-            time_sensitive_right_click: true,
+            // Off, as AutoCAD ships it: a right-click opens the shortcut menu however quick it is
+            // (with a selection, the editing commands), instead of repeating the last command.
+            time_sensitive_right_click: false,
             right_click_hold_ms: (crate::context_menu::HOLD_SECS * 1000.0) as u32,
             right_click_default: IdleClick::Menu,
             right_click_edit: IdleClick::Menu,
-            right_click_command: CommandClick::Menu,
+            // AutoCAD's default Command mode: the menu when the prompt has options, else Enter (so
+            // a right-click still ends "Select objects").
+            right_click_command: CommandClick::MenuWithOptions,
             interface_scale: 1.0,
             check_updates_at_start: true,
         }

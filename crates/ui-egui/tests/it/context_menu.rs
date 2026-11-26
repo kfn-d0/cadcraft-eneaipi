@@ -203,11 +203,14 @@ fn shift_right_click_opens_the_snap_menu() {
     assert!(app.session.prompt_text().contains("Specify next point"), "no Enter: {}", app.session.prompt_text());
 }
 
-/// A quick right-click on the canvas at the insertion point of an INSERT the Blocks palette started
-/// cancels it; the same click during a typed INSERT is Enter, which asks the point again.
+/// With the time-sensitive right-click on, a quick right-click on the canvas at the insertion point
+/// of an INSERT the Blocks palette started cancels it; the same click during a typed INSERT is
+/// Enter, which asks the point again.
 #[test]
 fn quick_right_click_cancels_a_palette_placement_only() {
     let mut app = CadApp::new(Session::new(), Services::default());
+    // A quick right-click is the time-sensitive right-click's (off by default).
+    app.options.time_sensitive_right_click = true;
     let ctx = egui::Context::default();
     app.logic(&ctx);
     painted(&mut app, &ctx, Vec::new(), egui::Modifiers::NONE);

@@ -407,8 +407,9 @@ fn a_held_paste_is_cancelled_by_escape_and_runs_once() {
     assert_eq!(running(&app).as_deref(), Some("pasteblock"), "its own deadline runs it");
 }
 
-/// Where the window answers in the next frame or not at all, a request stops being answerable
-/// after that frame: the paste falls back at once and a later `Paste` is an ordinary Ctrl+V.
+/// Where the window answers in the next frame or not at all, a request stops completing its paste
+/// after that frame: the paste falls back at once. An answer that still comes soon after is
+/// retired without a second paste; a `Paste` after that is an ordinary Ctrl+V.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn without_late_answers_a_paste_after_the_next_frame_is_ordinary() {
@@ -437,8 +438,15 @@ fn without_late_answers_a_paste_after_the_next_frame_is_ordinary() {
     frame(&mut app, vec![]);
     assert_eq!(running(&app).as_deref(), Some("pasteclip"), "no answer: pasted without waiting for the deadline");
     app.session.cancel();
+    // Its answer coming late is retired: one Ctrl+V doesn't paste twice.
     frame(&mut app, paste());
-    assert_eq!(running(&app).as_deref(), Some("pasteclip"), "a Ctrl+V after that is not an answer");
+    assert_eq!(running(&app), None, "a late answer pastes nothing more");
+    // A Ctrl+V once that time has passed pastes.
+    for _ in 0..110 {
+        frame(&mut app, vec![]);
+    }
+    frame(&mut app, paste());
+    assert_eq!(running(&app).as_deref(), Some("pasteclip"), "a later Ctrl+V is not an answer");
     app.session.cancel();
 
     // An answer in the next frame completes the paste, once.

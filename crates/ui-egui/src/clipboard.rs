@@ -162,6 +162,11 @@ struct Sent {
     frame: u64,
     /// When it stops being answerable on a window that answers late.
     until: f64,
+    /// On a window that answers in the next frame: until when an answer that comes later still
+    /// counts as this request's (twice [`WAIT_SECS`]). Its command no longer waits for it (it has
+    /// pasted what the window holds), so that answer pastes nothing; without this it was taken
+    /// for a new Ctrl+V and one Ctrl+V pasted twice.
+    soon: f64,
 }
 
 impl Default for Paste {
@@ -175,8 +180,9 @@ impl Paste {
     /// the clipboard when it handles the command, right after the frame that sent it is painted,
     /// and the text is in the next frame's input (`request_paste`, `begin_regular_clipboard_paste`
     /// and `take_egui_input`), or nothing comes when there is no text; only its Wayland backend
-    /// reads asynchronously. A request is then answerable for one frame, not for seconds, so a
-    /// Ctrl+V after it is never taken for its answer. On Wayland that Ctrl+V within
+    /// reads asynchronously. A request then completes its paste only in the next frame; an answer
+    /// that comes later within [`Sent::soon`] is retired without pasting again, so one Ctrl+V
+    /// never pastes twice (a Ctrl+V pressed within that second is taken for it, once). On Wayland that Ctrl+V within
     /// [`ANSWER_SECS`] of a request that got no answer is, once, taken for it.
     pub fn set_late_answers(&mut self, late: bool) {
         self.late = late;
@@ -244,7 +250,7 @@ pub fn pump(app: &mut CadApp, ctx: &egui::Context) {
         app.paste.frame += 1;
     }
     let (frame, late) = (app.paste.frame, app.paste.late);
-    app.paste.sent.retain(|r| if late { r.until > now } else { r.frame + 1 >= frame });
+    app.paste.sent.retain(|r| if late { r.until > now } else { r.frame + 1 >= frame || r.soon > now });
     // A held paste belongs to the drawing it was asked for in. If another one is shown by now (a
     // file read in the background finished opening, or the tab was switched), it is dropped
     // rather than run there.
@@ -268,14 +274,21 @@ pub fn pump(app: &mut CadApp, ctx: &egui::Context) {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             let id = app.paste.next_id;
             app.paste.next_id += 1;
-            app.paste.sent.push(Sent { id, frame, until: now + ANSWER_SECS });
+            app.paste.sent.push(Sent { id, frame, until: now + ANSWER_SECS, soon: now + 2.0 * WAIT_SECS });
             ctx.request_repaint_after_secs(WAIT_SECS as f32);
             app.paste.wait = Some((p, id, now + WAIT_SECS));
         }
     }
     // A request that can no longer be answered, or the time to give up, ends the wait; a `Paste`
     // in this frame completes the held command first ([`shortcut_actions`]).
-    let gone = |app: &CadApp| app.paste.wait.as_ref().is_some_and(|(_, id, _)| !app.paste.sent.iter().any(|r| r.id == *id));
+    // On a window that answers in the next frame, a request kept only to retire a late answer
+    // ([`Sent::soon`]) no longer completes its paste.
+    let gone = |app: &CadApp| {
+        app.paste
+            .wait
+            .as_ref()
+            .is_some_and(|(_, id, _)| !app.paste.sent.iter().any(|r| r.id == *id && (app.paste.late || r.frame + 1 >= app.paste.frame)))
+    };
     if (gone(app) || (!pasted && app.paste.wait.as_ref().is_some_and(|(_, _, deadline)| now >= *deadline)))
         && let Some((p, _, _)) = app.paste.wait.take()
     {

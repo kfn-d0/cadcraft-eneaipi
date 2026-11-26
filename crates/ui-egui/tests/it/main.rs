@@ -23,6 +23,7 @@ mod insert_attrib_dialog;
 mod instant_modals;
 mod lisp_files;
 mod measure_distance_snapping;
+mod measure_dropdown;
 mod menubar_hover;
 mod moving_clicks;
 mod mspace_viewport_view;

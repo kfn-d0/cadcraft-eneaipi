@@ -1320,6 +1320,10 @@ mod insert_opens_blocks_palette_tests {
         app.cmdline("-INSERT");
         assert!(app.session.prompt_text().contains("Enter block name"), "{}", app.session.prompt_text());
         app.session.cancel();
+        // The block named on the line goes to INSERT itself, which asks where to put it.
+        app.cmdline("INSERT BOLT");
+        assert!(app.session.prompt_text().contains("Specify insertion point"), "{}", app.session.prompt_text());
+        app.session.cancel();
         // JSON calls keep placing the block directly.
         app.run("insert", json!({ "name": "BOLT", "at": [10, 10] })).unwrap();
         assert!(app.session.doc().unwrap().model.iter().any(|e| matches!(e.kind, cadcraft_engine::doc::EntityKind::Insert(_))));

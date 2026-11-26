@@ -702,7 +702,10 @@ impl CadApp {
             } else {
                 name
             };
-            if !first.is_empty() && !json_form && menus::run_ui_command(self, &name, &Value::Null).is_some() {
+            // INSERT with its answers on the line (`INSERT BOLT`) runs at the command line; only a
+            // bare INSERT opens the Blocks palette.
+            let palette_insert = matches!(name.as_str(), "insert" | "i" | "ddinsert");
+            if !first.is_empty() && !json_form && (alone || !palette_insert) && menus::run_ui_command(self, &name, &Value::Null).is_some() {
                 return None;
             }
             // A bare PASTECLIP, PASTEBLOCK or PASTEORIG reads the system clipboard first.

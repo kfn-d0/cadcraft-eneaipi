@@ -688,13 +688,20 @@ fn run_pagesetup(s: &mut Session, p: &Value) -> Result<Value> {
     let device_paper = super::plotters::page_device(cmd, p, &mut page)?;
     if let Some(paper) = p.get("paper").filter(|_| !device_paper) {
         let n = paper.as_str().ok_or_else(|| bad(cmd, "`paper` must be a paper name"))?;
-        let ps = cadcraft_render::paper_size(n).ok_or_else(|| {
-            let known: Vec<&str> = cadcraft_render::PAPER_SIZES.iter().filter_map(|p| p.aliases.first().copied()).collect();
-            bad(cmd, format!("unknown paper size `{n}` (known: {})", known.join(", ")))
-        })?;
-        page.paper = ps.name.into();
-        page.width_mm = ps.width_mm;
-        page.height_mm = ps.height_mm;
+        match cadcraft_render::paper_size(n) {
+            Some(ps) => {
+                page.paper = ps.name.into();
+                page.width_mm = ps.width_mm;
+                page.height_mm = ps.height_mm;
+            }
+            // The layout's own paper, from a device not installed here (a drawing's "DWG To
+            // PDF.pc3" paper, say): resubmitting it (Apply to Layout) keeps its name and size.
+            None if n == page.paper && page.width_mm > 0.0 && page.height_mm > 0.0 => {}
+            None => {
+                let known: Vec<&str> = cadcraft_render::PAPER_SIZES.iter().filter_map(|p| p.aliases.first().copied()).collect();
+                return Err(bad(cmd, format!("unknown paper size `{n}` (known: {})", known.join(", "))));
+            }
+        }
     }
     // The picked paper's own units become the layout's paper units: millimetres for a metric
     // paper, else the drawing's MEASUREMENT. Otherwise ISO A0 in a new (imperial) drawing's

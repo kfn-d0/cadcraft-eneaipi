@@ -205,7 +205,9 @@ fn near_axes(s: &Session, c: Vec2, bands: &[Bounds2; 2]) -> Vec<std::sync::Arc<E
     let Ok(d) = s.doc() else { return Vec::new() };
     let space = s.space();
     let touches = |b: &Bounds2| bands.iter().any(|band| band.intersects(b));
-    let wanted = |e: &Entity| traced(&e.kind) && d.is_visible(e);
+    // Layers frozen in the active viewport are not drawn there, so they do not stop an axis.
+    let frozen = s.viewport_frozen();
+    let wanted = |e: &Entity| traced(&e.kind) && d.is_visible(e) && !crate::select::on_frozen_layer(frozen, e);
     let mut found: Vec<(f64, std::sync::Arc<Entity>)> = Vec::new();
     match crate::spatial::index(d, &space) {
         Some(ix) => {

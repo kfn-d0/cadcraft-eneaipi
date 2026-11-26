@@ -550,3 +550,18 @@ fn plot_layout_saved_area_and_explicit_window_precedence() {
         "limits is invalid when any target sheet is a layout"
     );
 }
+
+/// Apply to Layout sends back the layout's own paper: a paper no standard size or installed device
+/// names (a custom size here, a "DWG To PDF.pc3" paper in a drawing from elsewhere) is kept, while
+/// another unknown name is still refused.
+#[test]
+fn pagesetup_keeps_the_layouts_own_unlisted_paper_when_it_is_sent_back() {
+    let mut s = Session::new();
+    s.execute("pagesetup", &json!({"layout": "Layout1", "width": 254, "height": 508})).unwrap();
+    let before = s.doc().unwrap().layout("Layout1").unwrap().page.clone();
+    s.execute("pagesetup", &json!({"layout": "Layout1", "paper": before.paper, "landscape": true})).unwrap();
+    let after = &s.doc().unwrap().layout("Layout1").unwrap().page;
+    assert_eq!((&after.paper, after.width_mm, after.height_mm), (&before.paper, before.width_mm, before.height_mm));
+    assert!(after.landscape, "the other settings are saved with it");
+    assert!(s.execute("pagesetup", &json!({"layout": "Layout1", "paper": "No Such Paper (1 x 2 MM)"})).is_err());
+}

@@ -373,9 +373,12 @@ fn islands(found: Vec<HatchLoop>, tol: f64) -> Vec<HatchLoop> {
                 let polys: Vec<Vec<Vec2>> =
                     many.iter().filter_map(|&i| flat.get(i).map(|p| p.iter().copied().chain(p.first().copied()).collect())).collect();
                 match cadcraft_geom::region::outline(&polys, tol, 0.0) {
-                    Some(union) => {
-                        out.push(HatchLoop { vertices: union.into_iter().map(PolyVertex::new).collect(), outer: false, boundary_flags: None, sources: Vec::new() })
-                    }
+                    Some(union) => out.push(HatchLoop {
+                        vertices: union.into_iter().map(PolyVertex::new).collect(),
+                        outer: false,
+                        boundary_flags: None,
+                        sources: Vec::new(),
+                    }),
                     // Not one outline after all: each left out on its own.
                     None => out.extend(many.iter().filter_map(|&i| found.get(i).cloned())),
                 }

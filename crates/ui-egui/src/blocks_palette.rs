@@ -70,6 +70,14 @@ pub fn route(app: &mut CadApp, id: &str, params: &Value) -> Option<Result<Value,
     }
 }
 
+/// INSERT typed or from a menu: show the palette on its Current Drawing tab, so the drawing's
+/// blocks are listed to pick from instead of a name to type.
+pub(crate) fn open_from_insert(app: &mut CadApp) -> Result<Value, String> {
+    let r = open_palette(app);
+    app.session.echo(crate::tl!("INSERT: pick a block in the Blocks palette (-INSERT asks for its name at the command line)"));
+    r
+}
+
 /// Show the palette. The first time it docks below the other palettes; after that it comes back
 /// where it was.
 fn open_palette(app: &mut CadApp) -> Result<Value, String> {

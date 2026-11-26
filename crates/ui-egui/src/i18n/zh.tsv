@@ -434,6 +434,7 @@
 	Match Layer	匹配图层
 	Match Properties	特性匹配
 	Measure	度量
+	Quick Measure	快速测量
 	Measure Distance	测量距离
 	Measure Geometry	测量几何图形
 	Merge Cells	合并单元格
@@ -1522,6 +1523,9 @@ menu	View	视图
 	Ctrl+Enter to apply	Ctrl+Enter 应用
 	Edit Text	编辑文字
 	The drawing changed. Close the window and open it again.	图纸已切换。请关闭窗口后重新打开。
+	Ribbon	功能区
+	Windows Layout (Ribbon)	Windows 布局 (功能区)
+	Mac Layout (Tool Sets)	Mac 布局 (工具集)
 
 # ArtCraft feature naming
 	Additional Tools	其他工具

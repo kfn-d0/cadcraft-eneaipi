@@ -1,0 +1,55 @@
+name: Windows exe
+
+# Builds cadcraft.exe (Windows x64, release) from this branch and keeps it as a downloadable
+# artifact of the run. Unsigned, not packaged: for trying the branch out.
+on:
+  push:
+    branches: [melhorias-autocad]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build cadcraft.exe
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out craft-fonts
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
+        with:
+          # Same craft-fonts commit as ci.yml and release.yml.
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+      - name: Check out craft-i18n
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-exe
+      - name: Build
+        shell: bash
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: cargo build --release -p cadcraft
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/cadcraft.exe dist/
+          git rev-parse HEAD > dist/COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadcraft-windows-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30

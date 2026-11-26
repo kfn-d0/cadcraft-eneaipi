@@ -534,6 +534,7 @@
 	Match Layer	Узгодити шар
 	Match Properties	Копіювати властивості
 	Measure	Розмітити
+	Quick Measure	Швидке вимірювання
 	Measure Distance	Виміряти відстань
 	Measure Geometry	Виміряти геометрію
 	Menu Bar	Рядок меню
@@ -1395,6 +1396,8 @@
 	CADCraft is up to date.	Встановлено найновішу версію CADCraft.
 	Could not check for updates.	Не вдалося перевірити оновлення.
 	Save changes to block "{name}"?	Зберегти зміни в блоці «{name}»?
+	Constant	Константа
+	Multiline: edit it with Edit Attributes	Багаторядковий: змінюйте в «Редагувати атрибути»
 	Add a drawing file as a block library	Додати файл креслення як бібліотеку блоків
 	Add a folder of drawings or a drawing file to use its blocks.	Додайте теку з кресленнями або файл креслення, щоб використовувати його блоки.
 	Block Libraries	Бібліотеки блоків
@@ -1437,6 +1440,9 @@
 	Ctrl+Enter to apply	Ctrl+Enter to apply
 	Edit Text	Edit Text
 	The drawing changed. Close the window and open it again.	Креслення змінилося. Закрийте вікно та відкрийте його знову.
+	Ribbon	Стрічка
+	Windows Layout (Ribbon)	Розкладка Windows (стрічка)
+	Mac Layout (Tool Sets)	Розкладка Mac (набори інструментів)
 	Keyboard Shortcuts...	Комбінації клавіш...
 	Keyboard Shortcuts	Комбінації клавіш
 	Replaces the shortcut of {commands}	Замінює комбінацію клавіш команди: {commands}

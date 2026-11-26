@@ -35,7 +35,7 @@ use grips::{click_grip, grip_at, grip_menu, grip_options, grip_rect};
 use list::{OnlyList, PrimIndex, ensure_list, rebuilt_preview};
 #[cfg(test)]
 use list::{preview_options, prims_of};
-use pick::{edit_text_at, hatch_at, wheel_zoom_points};
+use pick::{edit_table_cell_at, edit_text_at, editable_block_at, hatch_at, wheel_zoom_points};
 #[cfg(test)]
 use viewport::viewport_highlight_tolerance;
 use viewport::{HoverPart, VpContent, VpHighlight, draw_vp_content, ensure_vp_content};
@@ -115,6 +115,9 @@ pub struct CanvasState {
     /// Bumped whenever `list` is rebuilt (identifies it for [`PrimIndex`]).
     list_gen: u64,
     prim_index: PrimIndex,
+    /// The block references with an attribute to edit, for a double-click on their attribute text
+    /// ([`pick::editable_block_at`]); kept between double-clicks, rebuilt for what changed.
+    attrib_targets: cadcraft_render::AttribTargets,
     /// Set when the app runs on wgpu: entities are drawn by [`crate::gpu`]; otherwise on the CPU.
     pub gpu: Option<crate::gpu::GpuTarget>,
     /// The wgpu device, for background rebuilds to create their buffers (see [`rebuild`]).
@@ -284,6 +287,7 @@ fn navigate_canvas(app: &mut CadApp, ui: &mut egui::Ui, nav: &Navigation<'_>) ->
     let inside = p.hover_pos.is_some_and(|at| nav.rect.contains(at) && ui.ctx().layer_id_at(at) == Some(ui.layer_id()) && nav.response.hovered());
     let on_menu = p.hover_pos.is_some_and(|at| over_canvas_menu(app, at));
     app.session.ctrl_down = p.mods.ctrl;
+    app.session.shift_down = p.mods.shift;
     ui.input(|i| {
         for event in &i.raw.events {
             if let egui::Event::MouseWheel { unit, .. } = event {
@@ -642,6 +646,18 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
         let pp = xf_paper.to_world(hp);
         let in_rect = |v: &cadcraft_doc::Viewport| (pp.x - v.center.x).abs() <= v.width / 2.0 && (pp.y - v.center.y).abs() <= v.height / 2.0;
         let in_active = active_viewport.as_ref().is_some_and(|v| active_clip.as_ref().map_or(in_rect(v), |c| c.contains(pp)));
+        // A paper-space block reference (a title block) edits its attributes on the sheet, before
+        // the viewport navigation below takes the click as entering model space. A point over a
+        // viewport, or a click in MSPACE, still goes to the viewport.
+        if !in_active
+            && app.session.running.is_none()
+            && app.session.state().is_ok_and(|st| st.mspace.is_none() && st.viewport_at(pp).is_none())
+            && let Some(h) = editable_block_at(app, pp)
+        {
+            app.session.set_selection(vec![h]);
+            app.start("eattedit");
+            return None;
+        }
         if !in_active {
             app.canvas.hot_grips.clear();
             app.session.pending_window = None;
@@ -655,12 +671,36 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
             return None;
         }
     }
+    // Double-click a block reference with attributes to edit them in the Enhanced Attribute
+    // Editor, as in AutoCAD: EATTEDIT with that reference already picked (the dialog's route,
+    // not another dialog path). The click is used up: it must not also start a grip edit.
+    if inside
+        && double
+        && app.session.running.is_none()
+        && let Some(hp) = hover
+        && let Some(h) = editable_block_at(app, xf.to_world(hp))
+    {
+        app.session.set_selection(vec![h]);
+        app.start("eattedit");
+        return None;
+    }
+
     // Double-click text to edit it, as in AutoCAD: TEXTEDIT with that object already picked.
     if inside
         && double
         && app.session.running.is_none()
         && let Some(hp) = hover
         && edit_text_at(app, xf.to_world(hp))
+    {
+        return None;
+    }
+
+    // Double-click a table cell to edit it in place, as in AutoCAD: TABLEDIT on that cell (#3136).
+    if inside
+        && double
+        && app.session.running.is_none()
+        && let Some(hp) = hover
+        && edit_table_cell_at(app, xf.to_world(hp))
     {
         return None;
     }
@@ -690,6 +730,7 @@ fn update_canvas_cursor(
     hover: Option<Pos2>,
 ) -> (Option<Vec2>, Option<crate::dyninput::Frame>) {
     let raw_world = hover.filter(|_| inside).map(|p| xf.to_world(p));
+    app.session.pointer = raw_world;
     let dyn_frame = crate::cmdline::dyn_frame(app);
     track_cursor(app, raw_world, xf, ui.ctx(), dyn_frame);
 

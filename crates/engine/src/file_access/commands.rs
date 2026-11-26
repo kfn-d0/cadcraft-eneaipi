@@ -443,6 +443,7 @@ pub const NO_FILES: &[&str] = &[
     "quickcalc.pick",
     "find",
     "measuregeom",
+    "measure.quick",
     "radius.measure",
     "angle.measure",
     "volume.measure",

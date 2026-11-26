@@ -422,8 +422,11 @@ fn image_clip(i: &cadcraft_doc::Image, place: impl Fn(Vec2) -> Vec2) -> Option<V
 }
 
 mod table;
-pub use table::{MAX_LAYOUT_CELLS, TableFill, TableGeom, TableLine, TableText, table_covered, table_geometry, table_style_of};
+pub use table::{
+    EditableCellText, MAX_LAYOUT_CELLS, TableFill, TableGeom, TableLine, TableText, table_cell_text, table_covered, table_geometry, table_style_of,
+};
 
+mod attrib_pick;
 mod blocks;
 mod dim_draw;
 mod display;
@@ -433,12 +436,17 @@ mod props;
 mod text_entity;
 mod viewports;
 
+pub use attrib_pick::{
+    AnnoView, AttribClick, AttribPick, AttribPickStats, AttribTargets, MAX_ATTRIB_PICK_WORK, REACH_HEIGHTS_PER_BYTE, attribute_reference_at,
+};
 pub use dim_draw::{dim_text, dimension_in};
 pub use display::{DImage, DPrim, DisplayList, Kind, MAX_TRANSPARENCY, NO_LAYER, PlotText, VIEWPORT_CONTENT, alpha};
 pub use pipeline::{Options, build, build_entities, build_plot};
 use props::{default_lineweight, resolve_common};
 use text_entity::text_style;
-pub use text_entity::{fitted_text_entity, layout_mtext_entity, place_text_entity, style_font, text_align};
+pub use text_entity::{
+    fitted_text_entity, layout_mtext_contents, layout_mtext_entity, place_text_entity, place_text_entity_corners, style_font, text_align,
+};
 use viewports::{Clip, append_clipped_keep};
 pub use viewports::{clip_list, viewport_clip, viewport_content};
 

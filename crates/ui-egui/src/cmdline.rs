@@ -51,6 +51,9 @@ pub struct CmdLine {
 /// The most history lines the command line shows above its bar.
 pub const MAX_LINES: usize = 12;
 const LINE_H: f32 = 16.0;
+/// The resize grip on the command line's top edge: points above and below the edge.
+const GRIP_ABOVE: f32 = 7.0;
+const GRIP_BELOW: f32 = 5.0;
 
 /// The Dynamic Input frame for the prompt on screen, or `None` when the value boxes are not live
 /// (Dynamic Input off, no point prompt or a pending selection window).
@@ -745,7 +748,9 @@ fn zones(app: &CadApp, canvas: Rect, bar: Rect) -> Zones {
         Rect::from_min_size(pos2(bar.left(), bar.top() - h - 4.0), vec2(bar.width(), h + 2.0))
     });
     let top = window.or(lines).map_or(bar.top(), |r| r.top());
-    let grip = Rect::from_min_max(pos2(bar.left(), top - 3.0), pos2(bar.right(), top + 3.0));
+    // Tall enough to take with a mouse: the history lines right under it open the history
+    // window on a click, so a grip a few points tall was easy to miss.
+    let grip = Rect::from_min_max(pos2(bar.left(), top - GRIP_ABOVE), pos2(bar.right(), top + GRIP_BELOW));
     let mut all = bar.union(grip);
     if !app.session.prompting() {
         let k = suggestions_in(&app.session, &app.cmd.buffer).len();

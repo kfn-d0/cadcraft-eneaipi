@@ -132,7 +132,21 @@ mod hatch_pick_tests {
 
     #[test]
     fn double_clicking_a_hatch_opens_the_hatch_edit_dialog() {
+        hatch_double_click(None);
+    }
+
+    #[test]
+    fn double_clicking_a_hatch_on_either_sheet_opens_the_editor() {
+        for name in ["Layout1", "Layout2"] {
+            hatch_double_click(Some(name));
+        }
+    }
+
+    fn hatch_double_click(layout: Option<&str>) {
         let mut app = CadApp::new(Session::new(), Services::default());
+        if let Some(name) = layout {
+            app.run("layout.set", json!({ "name": name })).unwrap();
+        }
         app.session.execute("rectang", &json!({ "p1": [0, 0], "p2": [10, 10] })).unwrap();
         let hx = app.session.execute("hatch", &json!({ "points": [[5, 5]], "pattern": "SOLID" })).unwrap()["handle"].as_str().unwrap().to_string();
         let _ = app.session.zoom_extents();

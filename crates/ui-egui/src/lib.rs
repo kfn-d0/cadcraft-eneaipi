@@ -246,6 +246,9 @@ impl Default for UiState {
 /// Host services (file pickers, clipboard) injected by the app so this crate stays portable.
 #[derive(Default)]
 pub struct Services {
+    /// Read text directly when the host can do so without an asynchronous paste event.
+    /// None from the callback means the clipboard has no readable text.
+    pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
     pub pick_open: Option<Box<dyn Fn() -> Option<String>>>,
     pub pick_save: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Where set, the file dialogs are shown with this instead of calling `pick_open` /

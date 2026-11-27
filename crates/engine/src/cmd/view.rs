@@ -319,6 +319,10 @@ fn run_layout_set(s: &mut Session, p: &Value) -> Result<Value> {
         let l = s.doc()?.layout(name).ok_or_else(|| bad("layout.set", format!("no layout `{name}`")))?;
         Space::Paper(l.name.clone())
     };
+    // Finish the command in its original space before changing the space new points use.
+    if s.layout_space() != space || s.state()?.mspace.is_some() {
+        s.cancel();
+    }
     s.pending_window = None;
     let st = s.state_mut()?;
     st.space = space.clone();

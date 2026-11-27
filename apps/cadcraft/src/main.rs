@@ -201,8 +201,21 @@ pub fn install_io() {
     cadcraft_engine::cmd::file::set_dwg_compat_lost(cadcraft_io::dwg_compat_lost);
 }
 
+#[cfg(target_os = "windows")]
+fn clipboard_reader() -> Option<Box<dyn Fn() -> Option<String>>> {
+    Some(Box::new(|| arboard::Clipboard::new().ok()?.get_text().ok()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clipboard_reader() -> Option<Box<dyn Fn() -> Option<String>>> {
+    None
+}
+
 fn services() -> Services {
     Services {
+        // A requested Paste event is indistinguishable from a new Ctrl+V. Windows can read
+        // directly instead, so a missing reply never consumes the user's next paste.
+        clipboard_text: clipboard_reader(),
         pick_open: Some(Box::new(|| file_dialog(&Pick::Open).pick_file().map(|p| p.to_string_lossy().to_string()))),
         pick_save: Some(Box::new(|name: &str| file_dialog(&Pick::Save(name.into())).save_file().map(|p| p.to_string_lossy().to_string()))),
         // macOS shows the dialogs as sheets (`sheet::start_pick`), set once the window exists.

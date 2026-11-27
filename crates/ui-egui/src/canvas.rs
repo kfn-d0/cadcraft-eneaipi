@@ -667,6 +667,15 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
         {
             return None;
         }
+        if !in_active
+            && app.session.running.is_none()
+            && app.session.state().is_ok_and(|st| st.mspace.is_none())
+            && let Some(h) = hatch_at(app, pp, scale)
+        {
+            app.session.set_selection(vec![h]);
+            crate::hatchdlg::open_edit(app);
+            return Some(true);
+        }
         if !in_active {
             app.canvas.hot_grips.clear();
             app.session.pending_window = None;

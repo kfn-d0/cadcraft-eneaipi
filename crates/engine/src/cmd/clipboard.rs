@@ -313,6 +313,13 @@ fn adopt(d: &mut Drawing, e: &Entity, renames: &BTreeMap<String, String>) -> Ent
                 i.block = n.clone();
             }
         }
+        EntityKind::MLeader(m) => {
+            if let Some(i) = &mut m.block
+                && let Some(n) = renames.get(&i.block)
+            {
+                i.block = n.clone();
+            }
+        }
         EntityKind::Dimension(dm) => {
             dm.assoc.clear();
             if let Some(n) = dm.block.as_ref().and_then(|b| renames.get(b)) {

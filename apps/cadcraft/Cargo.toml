@@ -70,6 +70,7 @@ fmv-macos-events = "=0.1.0"
 
 # Rust HID backends: no proprietary SDK or C HID library.
 [target.'cfg(target_os = "windows")'.dependencies]
+arboard = { workspace = true }
 hidapi = { version = "2.6.7", default-features = false, features = ["windows-native"] }
 # View ▸ Accessibility ▸ Animation Effects ▸ Use System Setting: Windows' Animation effects
 # setting (system_animations.rs). Already in Cargo.lock through wgpu's DirectX 12 backend.

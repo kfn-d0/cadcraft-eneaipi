@@ -201,21 +201,11 @@ pub fn install_io() {
     cadcraft_engine::cmd::file::set_dwg_compat_lost(cadcraft_io::dwg_compat_lost);
 }
 
-#[cfg(target_os = "windows")]
-fn clipboard_reader() -> Option<Box<dyn Fn() -> Option<String>>> {
-    Some(Box::new(|| arboard::Clipboard::new().ok()?.get_text().ok()))
-}
-
-#[cfg(not(target_os = "windows"))]
-fn clipboard_reader() -> Option<Box<dyn Fn() -> Option<String>>> {
-    None
-}
-
-fn services() -> Services {
+fn services(late_clipboard_answers: bool) -> Services {
     Services {
-        // A requested Paste event is indistinguishable from a new Ctrl+V. Windows can read
-        // directly instead, so a missing reply never consumes the user's next paste.
-        clipboard_text: clipboard_reader(),
+        // A requested Paste event is indistinguishable from a new Ctrl+V. Read directly
+        // where available; native Wayland uses the window's asynchronous clipboard instead.
+        clipboard_text: if late_clipboard_answers { None } else { Some(Box::new(|| arboard::Clipboard::new().ok()?.get_text().ok())) },
         pick_open: Some(Box::new(|| file_dialog(&Pick::Open).pick_file().map(|p| p.to_string_lossy().to_string()))),
         pick_save: Some(Box::new(|name: &str| file_dialog(&Pick::Save(name.into())).save_file().map(|p| p.to_string_lossy().to_string()))),
         // macOS shows the dialogs as sheets (`sheet::start_pick`), set once the window exists.
@@ -617,7 +607,15 @@ fn main() -> eframe::Result {
         os_window::name_for(os_window::identity()),
         options,
         Box::new(move |cc| {
-            let mut app = CadApp::new(Session::empty(), services());
+            #[cfg(all(unix, not(target_os = "macos")))]
+            let late_clipboard_answers = {
+                use eframe::egui_wgpu::wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+                cc.display_handle().map_or(true, |display| matches!(display.as_raw(), RawDisplayHandle::Wayland(_)))
+            };
+            #[cfg(any(not(unix), target_os = "macos"))]
+            let late_clipboard_answers = false;
+            let mut app = CadApp::new(Session::empty(), services(late_clipboard_answers));
+            app.set_clipboard_late_answers(late_clipboard_answers);
             // The exit hook runs in `on_exit`: macOS ends the process inside AppKit's terminate after
             // it, so nothing after `run_native` can be relied on there.
             app.services.at_exit = Some(Box::new(move || nightly_session::finish_once(&exit_watch, previous_unclean)));
@@ -642,17 +640,6 @@ fn main() -> eframe::Result {
                 cadcraft_ui_egui::ribbon::apply_pc_layout(&mut app);
             }
             app.set_system_cursor_default(vars.system_cursor == Switch::On);
-            // Native Wayland answers a clipboard request asynchronously; every other backend in the
-            // next frame (egui-winit).
-            #[cfg(all(unix, not(target_os = "macos")))]
-            {
-                use eframe::egui_wgpu::wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
-                if let Ok(display) = cc.display_handle() {
-                    app.set_clipboard_late_answers(matches!(display.as_raw(), RawDisplayHandle::Wayland(_)));
-                }
-            }
-            #[cfg(any(not(unix), target_os = "macos"))]
-            app.set_clipboard_late_answers(false);
             // macOS: CADCRAFT_NO_NATIVE_MENU=1 keeps the menus inside the window.
             #[cfg(target_os = "macos")]
             app.set_native_menus(vars.no_native_menu != Switch::On);

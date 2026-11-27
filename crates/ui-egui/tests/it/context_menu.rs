@@ -532,11 +532,14 @@ fn a_held_paste_does_not_run_in_another_drawing() {
     frame(&mut app, vec![], 5.0);
     assert_eq!(running(&app), None, "the fallback does not paste into the other drawing");
 
-    // Back in a drawing that stays shown, a paste still runs.
+    // Back in a drawing that stays shown, a paste still runs. The copy came from another
+    // drawing, so it lands at the original coordinates without asking for a point.
+    let before = app.session.doc().unwrap().model.len();
     app.start("pasteclip");
     frame(&mut app, vec![], 0.01);
     frame(&mut app, paste(), 0.01);
-    assert_eq!(running(&app).as_deref(), Some("pasteclip"));
+    assert_eq!(running(&app), None);
+    assert!(app.session.doc().unwrap().model.len() > before, "the paste ran");
 }
 
 /// Input that answers the prompt of the command still running drops a paste held meanwhile: the

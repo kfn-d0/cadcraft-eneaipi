@@ -68,6 +68,9 @@ impl CadApp {
     /// about each drawing first and quit once all are dealt with. Returns whether the close has to
     /// wait (the caller then cancels the window close).
     pub fn request_quit(&mut self) -> bool {
+        if !crate::text_draft::commit(self) {
+            return true;
+        }
         if self.quit_confirmed || !self.session.docs.iter().any(|d| d.is_dirty()) {
             return false;
         }
@@ -173,6 +176,9 @@ impl CadApp {
     fn begin_close(&mut self, uids: Vec<u64>) {
         if self.closing.is_some() {
             // A prompt is already open; it has to be answered first.
+            return;
+        }
+        if !crate::text_draft::commit(self) {
             return;
         }
         self.closing = Some(Closing { queue: uids.into(), asking: None, quit: false });

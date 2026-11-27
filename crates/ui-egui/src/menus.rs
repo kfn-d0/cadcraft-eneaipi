@@ -490,7 +490,8 @@ fn run_ui_command_inner(app: &mut CadApp, id: &str, params: &Value) -> Option<Re
             let name = format.suggested_name(title.as_deref());
             // Bound to this drawing: the answer saves it, not whichever drawing is active then.
             app.pick_then(Pick::Save(name), |app, p| {
-                app.session.execute("saveas", &saveas_params(&app.ui, &app.session, &p)).map_err(|e| e.to_string())
+                let params = saveas_params(&app.ui, &app.session, &p);
+                app.save_as_user(params)
             })
             .unwrap_or(Ok(Value::Null))
         }

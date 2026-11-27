@@ -58,8 +58,7 @@ fn direct_empty_clipboard_answer_cannot_consume_the_next_keyboard_paste() {
 
 #[test]
 fn direct_clipboard_reads_keep_table_pasting() {
-    let services = Services { clipboard_text: Some(Box::new(|| Some("a	b
-c	d".into()))), ..Services::default() };
+    let services = Services { clipboard_text: Some(Box::new(|| Some("a\tb\nc\td".into()))), ..Services::default() };
     let mut app = app(services);
     let ctx = Context::default();
     app.start("pasteclip");

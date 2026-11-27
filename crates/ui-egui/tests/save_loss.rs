@@ -127,3 +127,35 @@ fn a_hostile_list_of_types_is_capped() {
     assert!(s.ends_with("42 more types"), "{s}");
     cleanup(&path);
 }
+
+#[test]
+fn save_as_overwrite_waits_for_consent_and_cancel_keeps_the_original() {
+    let (mut app, path) = opened("save-as-cancel", &["MLINE"]);
+    let chosen = path.to_string_lossy().into_owned();
+    app.services.pick_save = Some(Box::new(move |_| Some(chosen.clone())));
+    app.run("ui.saveas", serde_json::Value::Null).unwrap();
+    assert!(app.save_loss.is_some());
+    assert_eq!(std::fs::read(&path).unwrap(), ORIGINAL);
+    app.answer_save_loss(Choice::Cancel);
+    assert_eq!(std::fs::read(&path).unwrap(), ORIGINAL);
+    cleanup(&path);
+}
+
+#[test]
+fn save_as_consent_keeps_the_chosen_destination_and_rechecks_new_loss() {
+    let (mut app, path) = opened("save-as-destination", &["MLINE"]);
+    let target = path.with_file_name("Other.dwg");
+    let chosen = target.to_string_lossy().into_owned();
+    app.services.pick_save = Some(Box::new(move |_| Some(chosen.clone())));
+    app.run("ui.saveas", serde_json::Value::Null).unwrap();
+    assert!(!target.exists(), "the warning comes before creating the chosen file");
+    app.session.doc_mut().unwrap().add(&Space::Model, Common::default(), unknown("3DSOLID")).unwrap();
+    app.answer_save_loss(Choice::SaveAnyway);
+    assert!(app.save_loss.is_some(), "new loss requires a fresh confirmation");
+    assert!(!target.exists());
+    app.answer_save_loss(Choice::SaveAnyway);
+    assert!(target.exists());
+    assert_eq!(app.session.state().unwrap().path.as_deref(), target.to_str());
+    assert_eq!(std::fs::read(&path).unwrap(), ORIGINAL, "Save As must not fall back to QSAVE of the old file");
+    cleanup(&path);
+}

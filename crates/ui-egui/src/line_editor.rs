@@ -45,6 +45,19 @@ fn current(app: &CadApp) -> Option<TextEditor> {
     (asking && matches!(ed.kind, EditorKind::Line | EditorKind::Dimension { .. })).then_some(ed)
 }
 
+fn answer(ed: &TextEditor, text: &str) -> Input {
+    let new = text.replace(['\r', '\n'], " ");
+    let contents = &ed.mtext.contents;
+    if new.is_empty() {
+        if matches!(ed.kind, EditorKind::Dimension { .. }) && contents != "<>" {
+            return Input::Text("<>".into());
+        }
+    } else if new != *contents {
+        return Input::Text(new);
+    }
+    Input::Enter
+}
+
 enum Done {
     No,
     Ok,
@@ -150,26 +163,24 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
     }
     match done {
         Done::No => {
+            let input = answer(&ed, &st.text);
+            if matches!(input, Input::Text(_)) {
+                crate::text_draft::stage(app, vec![input]);
+            } else {
+                app.text_draft = None;
+            }
             ctx.data_mut(|d| d.insert_temp(state_id(), st));
         }
         Done::Ok => {
+            app.text_draft = None;
             ctx.data_mut(|d| d.remove::<State>(state_id()));
-            let new = st.text.replace(['\r', '\n'], " ");
-            let dimension = matches!(ed.kind, EditorKind::Dimension { .. });
-            // Emptied: a text keeps its value, a dimension shows its measurement again.
-            let answer = match new.as_str() {
-                "" if dimension => (mt.contents != "<>").then(|| "<>".to_string()),
-                "" => None,
-                s if s == mt.contents => None,
-                _ => Some(new),
-            };
-            // Unchanged text is kept with Enter: no undo step.
-            let r = app.session.input(answer.map_or(Input::Enter, Input::Text));
+            let r = app.session.input(answer(&ed, &st.text));
             if let Err(e) = r {
                 app.session.echo(e.to_string());
             }
         }
         Done::Cancel => {
+            app.text_draft = None;
             ctx.data_mut(|d| d.remove::<State>(state_id()));
             app.session.cancel();
         }
@@ -219,5 +230,30 @@ mod tests {
         frame(&mut app, &ctx);
         let st = ctx.data_mut(|d| d.get_temp::<State>(state_id())).unwrap();
         assert_eq!(st.text, "SECOND", "the box shows the second drawing's text, not the draft");
+    }
+
+    #[test]
+    fn quitting_commits_the_visible_text_draft_before_checking_dirty_state() {
+        let mut app = CadApp::new(Session::new(), Services::default());
+        let ctx = egui::Context::default();
+        let h = app.run("text", json!({ "at": [0, 0], "text": "SAVED", "height": 2.5 })).unwrap()["handle"].clone();
+        let doc = app.session.state().unwrap().doc.clone();
+        app.session.state_mut().unwrap().saved = doc;
+        edit_text_at_origin(&mut app);
+        frame(&mut app, &ctx);
+        ctx.data_mut(|d| {
+            let mut st = d.get_temp::<State>(state_id()).unwrap();
+            st.text = "VISIBLE DRAFT".into();
+            d.insert_temp(state_id(), st);
+        });
+        frame(&mut app, &ctx);
+        assert!(!app.session.state().unwrap().is_dirty(), "typing has not yet changed the stored entity");
+        assert!(app.request_quit(), "closing must wait for the save/discard choice");
+        assert!(app.close_prompt().is_some());
+        let handle = cadcraft_doc::Handle::parse_hex(h.as_str().unwrap()).unwrap();
+        let e = app.session.doc().unwrap().entity(handle).unwrap();
+        assert!(matches!(&e.kind, cadcraft_doc::EntityKind::Text(t) if t.value == "VISIBLE DRAFT"));
+        app.answer_close(crate::closing::Choice::Cancel);
+        assert!(app.session.state().unwrap().is_dirty(), "cancelling the close keeps the edit");
     }
 }

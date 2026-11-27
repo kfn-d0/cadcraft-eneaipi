@@ -972,6 +972,14 @@ pub fn loss_on_save(s: &Session, path: &str) -> std::collections::BTreeMap<Strin
     s.doc().map(|d| not_saved_as(d, version)).unwrap_or_default()
 }
 
+/// The version and content loss of a proposed Save As, before any file is written.
+pub fn loss_on_save_as(s: &Session, params: &Value) -> Result<(Version, std::collections::BTreeMap<String, usize>)> {
+    let path = str_param(params, "path").ok_or_else(|| bad("saveas", "path is required"))?;
+    let opts = save_options("saveas", params)?;
+    let version = opts.version.unwrap_or_else(|| drawing_version(s, path));
+    Ok((version, lost_writing(s.state()?.drawing(), path, version)))
+}
+
 /// What a DXF of `version` leaves out of the drawing a save writes: the host while the Block
 /// Editor is open ([`dxf_lost`]).
 fn host_dxf_lost(s: &Session, version: Version) -> std::collections::BTreeMap<String, usize> {

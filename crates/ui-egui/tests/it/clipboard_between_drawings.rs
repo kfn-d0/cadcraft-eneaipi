@@ -72,18 +72,13 @@ fn copy_in_one_drawing_and_paste_in_another() {
     assert!(h.state().session.doc().unwrap().model.is_empty());
     assert!(!h.ctx.egui_wants_keyboard_input(), "the clicked tab doesn't hold the keyboard");
     // Ctrl+V: egui reports it as a Paste event with the system clipboard's text.
+    // Copied in another drawing: they land at the same coordinates, without asking for a point.
     h.event(Event::Paste(text));
     h.run_steps(3);
-    assert_eq!(
-        h.state().session.running.as_ref().map(|r| r.id.as_str()),
-        Some("pasteclip"),
-        "{:?}",
-        h.state().session.log.iter().rev().take(5).collect::<Vec<_>>()
-    );
-    h.state_mut().session.input(Input::Point(Vec2::new(100.0, 100.0))).unwrap();
-    h.run_steps(2);
+    assert!(h.state().session.running.is_none(), "{:?}", h.state().session.log.iter().rev().take(5).collect::<Vec<_>>());
     let d = h.state().session.doc().unwrap();
     assert_eq!(d.model.len(), 2);
+    assert!(d.model.iter().any(|e| matches!(&e.kind, EntityKind::Line(l) if l.a.x == 0.0 && l.b.x == 10.0)), "at the original coordinates");
     assert!(d.model.iter().any(|e| matches!(&e.kind, EntityKind::Insert(i) if i.block == "DOT")));
     assert!(d.block("DOT").is_some());
 

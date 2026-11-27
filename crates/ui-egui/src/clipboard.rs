@@ -63,10 +63,10 @@ pub fn shortcut_actions(app: &mut CadApp, ctx: &egui::Context) -> Vec<ShortcutAc
             egui::Event::Copy => out.push(ShortcutAction::Command(if shift { "copybase" } else { "copyclip" })),
             egui::Event::Cut => out.push(ShortcutAction::Command("cutclip")),
             egui::Event::Paste(text) => {
-                // The oldest request sent in an earlier frame and still unanswered gets this
-                // `Paste`. It completes the held command only if the command asked for that
-                // request; otherwise it answers one whose command is gone and pastes nothing. With
-                // no such request it is an ordinary Ctrl+V.
+                // Pump has removed requests whose reply window closed. The oldest remaining
+                // request from an earlier frame gets this `Paste`, even if its command was
+                // cancelled or a Wayland read outlasted its command. With no eligible request
+                // this is an ordinary Ctrl+V.
                 let answered = app.paste.sent.first().filter(|r| r.frame < app.paste.frame).map(|r| r.id);
                 if answered.is_some() {
                     app.paste.sent.remove(0);
@@ -123,13 +123,22 @@ const ANSWER_SECS: f64 = 5.0;
 /// a `Paste` only from the browser's own paste gesture, so it keeps pasting what the window holds.
 const ON_DEMAND: bool = cfg!(not(target_arch = "wasm32"));
 
-/// A paste command asked for outside the keyboard, held until the system clipboard has been read.
+/// The drawing and editing space a deferred paste belongs to.
+#[derive(PartialEq, Eq)]
+struct PasteTarget {
+    doc: u64,
+    layout: cadcraft_engine::doc::Space,
+    space: cadcraft_engine::doc::Space,
+    viewport: Option<cadcraft_engine::doc::Handle>,
+}
+
+/// A paste command held until the system clipboard has been read.
 struct Pending {
     id: &'static str,
     /// The command line text it was typed as, when it was.
     line: Option<String>,
-    /// The drawing it was asked for in (its `uid`): it pastes there or not at all.
-    doc: Option<u64>,
+    /// The drawing, layout and editing space the paste was asked for in.
+    target: Option<PasteTarget>,
     /// The inputs the session had been given when it was asked for (`Session::inputs`).
     inputs: u64,
 }
@@ -175,9 +184,9 @@ impl Paste {
     /// the clipboard when it handles the command, right after the frame that sent it is painted,
     /// and the text is in the next frame's input (`request_paste`, `begin_regular_clipboard_paste`
     /// and `take_egui_input`), or nothing comes when there is no text; only its Wayland backend
-    /// reads asynchronously. A request is then answerable for one frame, not for seconds, so a
-    /// Ctrl+V after it is never taken for its answer. On Wayland that Ctrl+V within
-    /// [`ANSWER_SECS`] of a request that got no answer is, once, taken for it.
+    /// reads asynchronously. A synchronous fallback only claims text in the next frame.
+    /// On Wayland a request can still claim a `Paste` within [`ANSWER_SECS`] even if its
+    /// command already ran: the window sends keyboard pastes and answers as the same event.
     pub fn set_late_answers(&mut self, late: bool) {
         self.late = late;
     }
@@ -190,9 +199,10 @@ impl Paste {
     }
 }
 
-/// The drawing shown now, as a held paste remembers it.
-fn active_doc(app: &CadApp) -> Option<u64> {
-    app.session.state().ok().map(|s| s.uid)
+/// The target shown now, as a held paste remembers it.
+fn active_target(app: &CadApp) -> Option<PasteTarget> {
+    let st = app.session.state().ok()?;
+    Some(PasteTarget { doc: st.uid, layout: st.space.clone(), space: st.edit_space(), viewport: st.mspace })
 }
 
 pub(crate) fn paste_id(id: &str) -> Option<&'static str> {
@@ -212,7 +222,7 @@ pub fn offered(session: &Session, spec: &CommandSpec) -> bool {
 pub fn defer(app: &mut CadApp, id: &str, line: Option<&str>) -> bool {
     let Some(id) = paste_id(id).filter(|_| ON_DEMAND && !app.paste.running) else { return false };
     app.paste.cancel();
-    app.paste.request = Some(Pending { id, line: line.map(str::to_string), doc: active_doc(app), inputs: app.session.inputs });
+    app.paste.request = Some(Pending { id, line: line.map(str::to_string), target: active_target(app), inputs: app.session.inputs });
     true
 }
 
@@ -233,7 +243,24 @@ fn run_now(app: &mut CadApp, p: Pending) {
 
 /// Run `id`, a paste command whose `Paste` event has been read.
 pub fn run_read(app: &mut CadApp, id: &'static str) {
-    run_now(app, Pending { id, line: None, doc: active_doc(app), inputs: app.session.inputs });
+    run_now(app, Pending { id, line: None, target: active_target(app), inputs: app.session.inputs });
+}
+
+/// A host read belongs only to this command and leaves no untagged response to retire later.
+fn run_host_answer(app: &mut CadApp, ctx: &egui::Context, p: Pending, text: Option<String>) {
+    if let Some(text) = text {
+        let h = hash(&text);
+        let is_dxf = ctx.data(|d| d.get_temp::<u64>(text_id())) == Some(h) || clipboard::load_system_text(&mut app.session, &text);
+        if is_dxf {
+            ctx.data_mut(|d| d.insert_temp(text_id(), h));
+        } else if p.id == "pasteclip" && cadcraft_engine::cmd::table::is_tsv_table(&text) {
+            if let Err(e) = app.session.start_paste_table(&text, None) {
+                app.session.echo(e.to_string());
+            }
+            return;
+        }
+    }
+    run_now(app, p);
 }
 
 /// Once per frame: ask the window for the system clipboard for a newly held paste, and give up on
@@ -245,13 +272,12 @@ pub fn pump(app: &mut CadApp, ctx: &egui::Context) {
     }
     let (frame, late) = (app.paste.frame, app.paste.late);
     app.paste.sent.retain(|r| if late { r.until > now } else { r.frame + 1 >= frame });
-    // A held paste belongs to the drawing it was asked for in. If another one is shown by now (a
-    // file read in the background finished opening, or the tab was switched), it is dropped
-    // rather than run there.
+    // A held paste belongs to the drawing and space where it was asked for. Switching
+    // documents, layout tabs or viewport editing modes cancels it before an answer is read.
     let held = app.paste.request.as_ref().or(app.paste.wait.as_ref().map(|(p, _, _)| p));
-    if held.is_some_and(|p| p.doc != active_doc(app)) {
+    if held.is_some_and(|p| p.target != active_target(app)) {
         app.paste.cancel();
-        app.session.echo("Paste cancelled: another drawing became active before the clipboard was read.");
+        app.session.echo(crate::tl!("Paste cancelled: the drawing or editing space changed before the clipboard was read.").to_string());
     }
     // Input that reached the session since it was asked for answered the prompt of the command
     // still running (a coordinate for LINE), which the paste would now cancel: that input stands,
@@ -261,8 +287,11 @@ pub fn pump(app: &mut CadApp, ctx: &egui::Context) {
         app.paste.cancel();
     }
     if let Some(p) = app.paste.request.take() {
-        // A focused text field would take the `Paste` itself.
-        if ctx.egui_wants_keyboard_input() {
+        // A direct host read answers only this request. It cannot be confused with Ctrl+V.
+        let direct = app.services.clipboard_text.as_ref().map(|read| read());
+        if let Some(text) = direct {
+            run_host_answer(app, ctx, p, text);
+        } else if ctx.egui_wants_keyboard_input() {
             run_now(app, p);
         } else {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -275,10 +304,13 @@ pub fn pump(app: &mut CadApp, ctx: &egui::Context) {
     }
     // A request that can no longer be answered, or the time to give up, ends the wait; a `Paste`
     // in this frame completes the held command first ([`shortcut_actions`]).
-    let gone = |app: &CadApp| app.paste.wait.as_ref().is_some_and(|(_, id, _)| !app.paste.sent.iter().any(|r| r.id == *id));
-    if (gone(app) || (!pasted && app.paste.wait.as_ref().is_some_and(|(_, _, deadline)| now >= *deadline)))
-        && let Some((p, _, _)) = app.paste.wait.take()
+    let gone = app.paste.wait.as_ref().is_some_and(|(_, id, _)| !app.paste.sent.iter().any(|r| r.id == *id));
+    if (gone || (!pasted && app.paste.wait.as_ref().is_some_and(|(_, _, deadline)| now >= *deadline)))
+        && let Some((p, id, _)) = app.paste.wait.take()
     {
+        if !late {
+            app.paste.sent.retain(|r| r.id != id);
+        }
         run_now(app, p);
     } else if app.paste.wait.is_some() && !late {
         ctx.request_repaint();

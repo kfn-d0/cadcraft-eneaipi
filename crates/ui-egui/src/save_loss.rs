@@ -1,9 +1,10 @@
 //! Asking before a save throws content away. DWG can't yet hold everything a drawing read from
 //! another program keeps (`cadcraft_engine::cmd::file::not_saved`), a DXF can't hold every solid
-//! or proxy of every version (`cadcraft_engine::cmd::file::loss_on_save`), and QSAVE replaces the file
+//! or proxy of every version (`cadcraft_engine::cmd::file::loss_on_save`), and saving can replace the file
 //! that still has it, so File ▸ Save, its shortcut or typing QSAVE says what would go first:
 //! Save Anyway / Save As... / Cancel. Save As from a DWG warning suggests DXF, which keeps the
-//! objects; File ▸ Save As suggests the user's default format. Agreeing lasts for that same loss
+//! objects. File ▸ Save As checks the chosen destination before writing and suggests the user's
+//! default format. Agreeing lasts for that same loss
 //! on that same file, so later saves in the session don't ask again; the file no longer holds
 //! what was agreed to.
 //!
@@ -16,7 +17,7 @@ use egui::{RichText, vec2};
 use serde_json::{Value, json};
 
 use cadcraft_engine::autosave::isavebak;
-use cadcraft_engine::cmd::file::{Version, backup_path, drawing_version, loss_on_save, save_keeps_current};
+use cadcraft_engine::cmd::file::{Version, backup_path, drawing_version, loss_on_save, loss_on_save_as, save_keeps_current};
 
 use crate::CadApp;
 use crate::theme::Tokens;
@@ -48,6 +49,8 @@ pub struct Pending {
     loss: Accepted,
     /// The version the file would be saved in: which DXF keeps what it loses depends on it.
     version: Version,
+    /// The exact destination and save options chosen in Save As, when that is the held action.
+    save_as: Option<Value>,
 }
 
 impl Pending {
@@ -83,13 +86,26 @@ impl CadApp {
             return false;
         }
         let version = drawing_version(&self.session, &loss.path);
-        self.save_loss = Some(Pending { loss, version });
+        self.save_loss = Some(Pending { loss, version, save_as: None });
         true
+    }
+
+    /// Save As from the interface checks the chosen file's loss before writing anything.
+    pub(crate) fn save_as_user(&mut self, params: Value) -> Result<Value, String> {
+        let (version, lost) = loss_on_save_as(&self.session, &params).map_err(|e| e.to_string())?;
+        if lost.is_empty() {
+            return self.run("saveas", params);
+        }
+        let uid = self.session.state().map_err(|e| e.to_string())?.uid;
+        let path = params["path"].as_str().unwrap_or_default().to_string();
+        let loss = Accepted { uid, path, lost };
+        self.save_loss = Some(Pending { loss, version, save_as: Some(params) });
+        Ok(Value::Null)
     }
 
     /// Answer the open warning (no-op without one).
     pub fn answer_save_loss(&mut self, choice: Choice) {
-        let Some(Pending { loss, .. }) = self.save_loss.take() else { return };
+        let Some(Pending { loss, version, save_as }) = self.save_loss.take() else { return };
         // The drawing can go away, or stop being the active one, while the warning is up.
         let i = self.session.docs.iter().position(|d| d.uid == loss.uid);
         match (choice, i) {
@@ -105,9 +121,28 @@ impl CadApp {
             }
             (Choice::SaveAnyway, Some(i)) => {
                 self.activate_doc(i);
-                self.save_loss_accepted = Some(loss);
-                let _ = self.run("qsave", json!({}));
+                if let Some(params) = save_as {
+                    self.confirm_save_as(loss, version, params);
+                } else {
+                    self.save_loss_accepted = Some(loss);
+                    let _ = self.run("qsave", json!({}));
+                }
             }
+        }
+    }
+
+    fn confirm_save_as(&mut self, loss: Accepted, version: Version, params: Value) {
+        // A new loss while the warning was open needs a new answer.
+        match loss_on_save_as(&self.session, &params) {
+            Ok((now, lost)) if now == version && lost == loss.lost => {
+                if self.run("saveas", params).is_ok() {
+                    self.save_loss_accepted = Some(loss);
+                }
+            }
+            Ok(_) => {
+                let _ = self.save_as_user(params);
+            }
+            Err(e) => self.set_status(e.to_string()),
         }
     }
 

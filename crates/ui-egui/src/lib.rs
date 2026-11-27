@@ -45,6 +45,7 @@ mod mtext_editor;
 mod panel_state;
 pub mod spacemouse;
 pub mod switch;
+mod text_draft;
 // The Edit Text window, opened from the shortcut menu's Edit Text entry.
 pub mod textdlg;
 // The External References palette.
@@ -246,6 +247,9 @@ impl Default for UiState {
 /// Host services (file pickers, clipboard) injected by the app so this crate stays portable.
 #[derive(Default)]
 pub struct Services {
+    /// Read text directly when the host can do so without an asynchronous paste event.
+    /// None from the callback means the clipboard has no readable text.
+    pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
     pub pick_open: Option<Box<dyn Fn() -> Option<String>>>,
     pub pick_save: Option<Box<dyn Fn(&str) -> Option<String>>>,
     /// Where set, the file dialogs are shown with this instead of calling `pick_open` /
@@ -323,6 +327,7 @@ pub struct CadApp {
     /// Calculator data shared by its floating and docked views; durable fields live in prefs.
     pub(crate) quickcalc: palettes::quickcalc::State,
     pub cmd: cmdline::CmdLine,
+    pub(crate) text_draft: Option<text_draft::Draft>,
     pub status: Option<(String, f64)>,
     /// Drawings being read on worker threads ([`opening`]).
     pub opening: opening::Opening,
@@ -427,6 +432,7 @@ impl CadApp {
             spacemouse: spacemouse::State::default(),
             quickcalc: palettes::quickcalc::State::default(),
             cmd: cmdline::CmdLine::default(),
+            text_draft: None,
             status: None,
             opening: opening::Opening::default(),
             integrated_titlebar: false,

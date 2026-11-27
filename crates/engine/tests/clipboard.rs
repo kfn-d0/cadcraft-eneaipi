@@ -142,14 +142,31 @@ fn pasteorig_pastes_only_into_another_drawing() {
     assert!(matches!(&pasted[0].kind, EntityKind::Line(l) if l.a.x == 10.0 && l.b.x == 30.0 && l.a.y == 20.0));
     assert!(s.doc().unwrap().block("DOOR").is_some());
 
-    // PASTECLIP asks for the insertion point and places the base point there.
+    // PASTECLIP started by a person in another drawing pastes at the same coordinates too.
+    s.start("pasteclip").unwrap();
+    assert!(s.running.is_none(), "{}", s.prompt_text());
+    let pasted = model(&s);
+    assert_eq!(pasted.len(), 4);
+    assert!(matches!(&pasted[2].kind, EntityKind::Line(l) if l.a.x == 10.0 && l.a.y == 20.0));
+
+    // A script still gives the insertion point, which takes the base point.
+    s.script(
+        "PASTECLIP 0,0
+",
+    )
+    .unwrap();
+    assert!(s.running.is_none(), "{}", s.prompt_text());
+    let pasted = model(&s);
+    assert_eq!(pasted.len(), 6);
+    assert!(matches!(&pasted[4].kind, EntityKind::Line(l) if l.a.x == 0.0 && l.a.y == 0.0));
+
+    // Back in the drawing it came from, PASTECLIP asks for the insertion point.
+    s.active = a;
     s.start("pasteclip").unwrap();
     assert!(s.prompt_text().contains("insertion point"), "{}", s.prompt_text());
     s.input(cadcraft_engine::Input::Point(Vec2::new(0.0, 0.0))).unwrap();
     assert!(s.running.is_none());
-    let pasted = model(&s);
-    assert_eq!(pasted.len(), 4);
-    assert!(matches!(&pasted[2].kind, EntityKind::Line(l) if l.a.x == 0.0 && l.a.y == 0.0));
+    assert_eq!(model(&s).len(), 4);
 }
 
 #[test]
@@ -345,4 +362,29 @@ fn clipboard_travels_as_text() {
     assert_eq!(v.clipboard.len(), 2, "newer text from another window replaces it");
     assert!(v.clipboard_source.as_ref().is_some_and(|c| c.uid.is_none()));
     let _ = a;
+}
+
+/// Pasted into another drawing whose view is elsewhere, the objects are brought into view; a view
+/// that already shows them is left as it was.
+#[test]
+fn paste_into_another_drawing_brings_the_objects_into_view() {
+    let mut s = Session::empty();
+    let a = s.open_drawing(drawing_a(), "A", None);
+    let b = s.open_drawing(drawing_b(), "B", None);
+    s.active = a;
+    s.execute("copyclip", &json!({ "handles": handles(&s) })).unwrap();
+    s.active = b;
+    let far = cadcraft_engine::View { center: Vec2::new(5000.0, 5000.0), height: 10.0, twist: 0.0 };
+    s.state_mut().unwrap().set_view(far);
+    s.start("pasteclip").unwrap();
+    let v = s.state().unwrap().zoom_frame();
+    let pasted = model(&s).into_iter().find(|e| matches!(e.kind, EntityKind::Line(_))).unwrap();
+    let EntityKind::Line(l) = pasted.kind else { unreachable!() };
+    let mid = (l.a.xy() + l.b.xy()) * 0.5;
+    assert!(v.center.dist(mid) < v.height, "the view went to the pasted objects: {v:?}, line at {mid:?}");
+
+    // A view that already shows them stays put.
+    let shown = s.state().unwrap().zoom_frame();
+    s.start("pasteclip").unwrap();
+    assert_eq!(s.state().unwrap().zoom_frame().center, shown.center);
 }

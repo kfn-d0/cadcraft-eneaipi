@@ -10,7 +10,15 @@ use serde_json::json;
 
 /// A 2 × 2 table from (0, 0) down, its cells 4 × 4: B2 has "d" and is centred at (6, -6).
 fn harness() -> Harness<'static, CadApp> {
+    harness_in(None)
+}
+
+fn harness_in(layout: Option<&str>) -> Harness<'static, CadApp> {
     let mut app = CadApp::new(Session::new(), Services::default());
+    if let Some(name) = layout {
+        app.run("text", json!({ "at": [0, 0], "text": "Model stays unchanged", "height": 2.5 })).unwrap();
+        app.run("layout.set", json!({ "name": name })).unwrap();
+    }
     app.run("table", json!({ "at": [0, 0], "rows": 2, "cols": 2, "rowHeight": 4, "colWidth": 4, "cells": [["a", "b"], ["c", "d"]] })).unwrap();
     app.session.execute("view.set", &json!({ "center": [4, -4], "height": 30 })).unwrap();
     app.canvas.zoom_pending = false;
@@ -74,4 +82,32 @@ fn double_click_away_from_a_table_starts_no_command() {
     let mut h = harness();
     double_click(&mut h, Vec2::new(-10.0, -10.0));
     assert_eq!(h.state().session.running.as_ref().map(|r| r.id.as_str()), None);
+}
+
+#[test]
+fn double_click_edits_a_table_cell_on_each_sheet() {
+    for layout in ["Layout1", "Layout2"] {
+        let mut h = harness_in(Some(layout));
+        let paper = cadcraft_engine::doc::Space::Paper(layout.into());
+        let model = h.state().session.doc().unwrap().model.clone();
+        double_click(&mut h, Vec2::new(6.0, -6.0));
+        let s = &h.state().session;
+        assert!(s.state().unwrap().mspace.is_none(), "{layout}");
+        assert_eq!(s.editing_mtext().map(|t| t.contents), Some("d".into()), "{layout}");
+        h.state_mut().session.input(Input::Text("edited on sheet".into())).unwrap();
+        h.run_steps(2);
+        let d = h.state().session.doc().unwrap();
+        let t = d
+            .space(&paper)
+            .unwrap()
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Table(t) => Some(t),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(t.cells[1][1].text, "edited on sheet");
+        assert_eq!(t.cells[1][0].text, "c", "only the clicked cell changed");
+        assert_eq!(d.model, model, "sheet edits leave model space unchanged");
+    }
 }

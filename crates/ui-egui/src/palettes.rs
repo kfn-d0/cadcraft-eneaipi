@@ -873,6 +873,11 @@ fn shown_part(s: &str) -> String {
 
 /// Properties palette: the selection's common properties, or the current defaults when nothing is selected; formats lengths per drawing units and dispatches setter commands.
 pub(crate) fn properties_section(app: &mut CadApp, ui: &mut egui::Ui) {
+    let uid = app.session.state().ok().map(|st| st.uid);
+    ui.push_id(("properties-document", uid), |ui| properties_content(app, ui));
+}
+
+fn properties_content(app: &mut CadApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     properties_header(app, ui);
     let sel = app.session.selection();
@@ -1959,5 +1964,45 @@ mod tests {
         assert_eq!(rows.remove(0).0, "0", "the combo above the list shows the current layer");
         let order: Vec<&str> = rows.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(order, names, "the list runs from top to bottom by name");
+    }
+
+    #[test]
+    fn pending_current_property_never_commits_to_another_document() {
+        use egui::accesskit::Role;
+        use egui_kittest::Harness;
+
+        let mut app = CadApp::new(Session::new(), Services::default());
+        app.session.new_drawing(false);
+        app.run("setvar", json!({ "name": "THICKNESS", "value": 7 })).unwrap();
+        app.run("document.switch", json!({ "index": 0 })).unwrap();
+        let mut h = Harness::builder().with_size(vec2(450.0, 1600.0)).build_ui_state(
+            |ui, app: &mut CadApp| {
+                if ui.button("Switch drawing").clicked() {
+                    app.run("document.switch", json!({ "index": 1 })).unwrap();
+                }
+                properties_section(app, ui);
+            },
+            app,
+        );
+        h.run_steps(3);
+        h.get_by_role_and_label(Role::TextInput, "Thickness").focus();
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, "Thickness").type_text("12");
+        h.run_steps(2);
+        h.get_by_role_and_label(Role::Button, "Switch drawing").click();
+        h.run_steps(3);
+        assert_eq!(h.state().session.active, 1);
+        assert_eq!(h.state().session.doc().unwrap().header.f64("THICKNESS", 0.0), 7.0, "the first document's draft must not be applied here");
+        h.get_by_role_and_label(Role::TextInput, "Thickness").focus();
+        h.run_steps(2);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.run_steps(1);
+        h.get_by_role_and_label(Role::TextInput, "Thickness").type_text("9");
+        h.run_steps(1);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        assert_eq!(h.state().session.doc().unwrap().header.f64("THICKNESS", 0.0), 9.0, "editing still works in the new document");
     }
 }

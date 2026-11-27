@@ -139,6 +139,11 @@ pub fn system_text(s: &Session) -> Option<String> {
         None => BTreeMap::new(),
     };
     d.header.set("INSBASE", HVal::Point(s.clipboard_base.to3(0.0)));
+    // The text travels as UTF-8 whatever version the source drawing has: written in its own (R12
+    // or 2000, say), the text of its objects is in the header's code page, and one accented
+    // letter ("ÁRVORE") made the bytes invalid UTF-8, so nothing reached the system clipboard
+    // and another window had nothing to paste. 2018 writes UTF-8.
+    d.header.set("ACADVER", HVal::Str("AC1032".into()));
     for e in &s.clipboard {
         let e = adopt(&mut d, e, &renames);
         d.ensure_layer(&e.common.layer);
@@ -310,6 +315,13 @@ fn adopt(d: &mut Drawing, e: &Entity, renames: &BTreeMap<String, String>) -> Ent
     match &mut e.kind {
         EntityKind::Insert(i) => {
             if let Some(n) = renames.get(&i.block) {
+                i.block = n.clone();
+            }
+        }
+        EntityKind::MLeader(m) => {
+            if let Some(i) = &mut m.block
+                && let Some(n) = renames.get(&i.block)
+            {
                 i.block = n.clone();
             }
         }

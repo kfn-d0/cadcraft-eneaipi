@@ -167,9 +167,21 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
     }
     match done {
         Done::No => {
+            let contents = st.fmt.to_contents();
+            let changed = !st.fmt.is_empty() && !Formatted::leaves_unchanged(&mt.contents, Some(mt.height), &contents);
+            if changed {
+                let mut answers = vec![cadcraft_engine::Input::Text(contents)];
+                if app.session.running.as_ref().is_some_and(|r| r.id == "mtext") {
+                    answers.push(cadcraft_engine::Input::Enter);
+                }
+                crate::text_draft::stage(app, answers);
+            } else {
+                app.text_draft = None;
+            }
             ctx.data_mut(|d| d.insert_temp(state_id(), st));
         }
         Done::Ok => {
+            app.text_draft = None;
             ctx.data_mut(|d| d.remove::<State>(state_id()));
             // The editor holds the whole contents: one input, then Enter ends MTEXT's text entry.
             // Emptied while editing an existing object (MTEXT, or a table cell, #3136): it keeps
@@ -188,6 +200,7 @@ pub fn show(app: &mut CadApp, ctx: &egui::Context) {
             }
         }
         Done::Cancel => {
+            app.text_draft = None;
             ctx.data_mut(|d| d.remove::<State>(state_id()));
             app.session.cancel();
         }
@@ -919,5 +932,33 @@ mod tests {
             }
         });
         assert!(missing.is_empty(), "drawn as boxes: {missing:?}");
+    }
+
+    #[test]
+    fn quitting_preserves_unconfirmed_multiline_text() {
+        let mut app = CadApp::new(Session::new(), Services::default());
+        let ctx = egui::Context::default();
+        let h = app.run("mtext", serde_json::json!({ "at": [0, 5], "text": "SAVED", "height": 1 })).unwrap()["handle"].clone();
+        let doc = app.session.state().unwrap().doc.clone();
+        app.session.state_mut().unwrap().saved = doc;
+        app.start("textedit");
+        app.session.input(cadcraft_engine::Input::Point(cadcraft_geom::Vec2::new(0.5, 4.5))).unwrap();
+        let paint = |app: &mut CadApp| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| show(app, ui.ctx()));
+            out.textures_delta.clear();
+        };
+        paint(&mut app);
+        ctx.data_mut(|d| {
+            let mut st = d.get_temp::<State>(state_id()).unwrap();
+            st.fmt = Formatted::from_contents("VISIBLE DRAFT");
+            d.insert_temp(state_id(), st);
+        });
+        paint(&mut app);
+        assert!(!app.session.state().unwrap().is_dirty());
+        assert!(app.request_quit());
+        assert!(app.close_prompt().is_some());
+        let handle = cadcraft_doc::Handle::parse_hex(h.as_str().unwrap()).unwrap();
+        let e = app.session.doc().unwrap().entity(handle).unwrap();
+        assert!(matches!(&e.kind, cadcraft_doc::EntityKind::MText(t) if t.contents.contains("VISIBLE DRAFT")));
     }
 }

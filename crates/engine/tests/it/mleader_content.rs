@@ -138,3 +138,22 @@ fn mleader_sizes_ignore_dimscale() {
     assert_eq!(t.height, 5.0);
     assert!((t.insert.x - (30.0 + st.dogleg + st.landing_gap)).abs() < 1e-9, "{}", t.insert.x);
 }
+
+#[test]
+fn pasted_multileader_keeps_its_symbol_when_an_anonymous_block_name_collides() {
+    let mut s = with_block();
+    std::sync::Arc::make_mut(s.doc_mut().unwrap().blocks.get_mut("TAG").unwrap()).anonymous = true;
+    let symbol = s.doc().unwrap().block("TAG").unwrap().entities.clone();
+    let h = s.execute("mleader", &json!({ "points": [[0, 0], [10, 5]], "block": "TAG" })).unwrap()["handle"].clone();
+    s.execute("copyclip", &json!({ "handles": [h] })).unwrap();
+    s.new_drawing(false);
+    let line = s.execute("line", &json!({ "points": [[100, 100], [200, 100]] })).unwrap()["handles"].clone();
+    s.execute("block", &json!({ "name": "TAG", "base": [0, 0], "handles": line, "keep": "delete" })).unwrap();
+    let existing = s.doc().unwrap().block("TAG").unwrap().entities.clone();
+    s.execute("pasteclip", &json!({ "at": [30, 30] })).unwrap();
+    let name = last_mleader(&s).block.unwrap().block;
+    assert_ne!(name, "TAG", "the pasted leader must use the renamed source block");
+    let pasted = &s.doc().unwrap().block(&name).unwrap().entities;
+    assert_eq!(pasted.iter().map(|e| &e.kind).collect::<Vec<_>>(), symbol.iter().map(|e| &e.kind).collect::<Vec<_>>());
+    assert_eq!(s.doc().unwrap().block("TAG").unwrap().entities, existing, "the destination's symbol is unchanged");
+}

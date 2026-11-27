@@ -203,11 +203,14 @@ fn shift_right_click_opens_the_snap_menu() {
     assert!(app.session.prompt_text().contains("Specify next point"), "no Enter: {}", app.session.prompt_text());
 }
 
-/// A quick right-click on the canvas at the insertion point of an INSERT the Blocks palette started
-/// cancels it; the same click during a typed INSERT is Enter, which asks the point again.
+/// With the time-sensitive right-click on, a quick right-click on the canvas at the insertion point
+/// of an INSERT the Blocks palette started cancels it; the same click during a typed INSERT is
+/// Enter, which asks the point again.
 #[test]
 fn quick_right_click_cancels_a_palette_placement_only() {
     let mut app = CadApp::new(Session::new(), Services::default());
+    // A quick right-click is the time-sensitive right-click's (off by default).
+    app.options.time_sensitive_right_click = true;
     let ctx = egui::Context::default();
     app.logic(&ctx);
     painted(&mut app, &ctx, Vec::new(), egui::Modifiers::NONE);
@@ -407,8 +410,8 @@ fn a_held_paste_is_cancelled_by_escape_and_runs_once() {
     assert_eq!(running(&app).as_deref(), Some("pasteblock"), "its own deadline runs it");
 }
 
-/// Where the window answers in the next frame or not at all, a request stops being answerable
-/// after that frame: the paste falls back at once and a later `Paste` is an ordinary Ctrl+V.
+/// Where the window answers in the next frame or not at all, a request stops completing its paste
+/// after that frame: the paste falls back at once, and a `Paste` after that is an ordinary Ctrl+V.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn without_late_answers_a_paste_after_the_next_frame_is_ordinary() {
@@ -438,7 +441,7 @@ fn without_late_answers_a_paste_after_the_next_frame_is_ordinary() {
     assert_eq!(running(&app).as_deref(), Some("pasteclip"), "no answer: pasted without waiting for the deadline");
     app.session.cancel();
     frame(&mut app, paste());
-    assert_eq!(running(&app).as_deref(), Some("pasteclip"), "a Ctrl+V after that is not an answer");
+    assert_eq!(running(&app).as_deref(), Some("pasteclip"), "a fresh Ctrl+V is not assigned to the completed fallback");
     app.session.cancel();
 
     // An answer in the next frame completes the paste, once.
@@ -529,11 +532,14 @@ fn a_held_paste_does_not_run_in_another_drawing() {
     frame(&mut app, vec![], 5.0);
     assert_eq!(running(&app), None, "the fallback does not paste into the other drawing");
 
-    // Back in a drawing that stays shown, a paste still runs.
+    // Back in a drawing that stays shown, a paste still runs. The copy came from another
+    // drawing, so it lands at the original coordinates without asking for a point.
+    let before = app.session.doc().unwrap().model.len();
     app.start("pasteclip");
     frame(&mut app, vec![], 0.01);
     frame(&mut app, paste(), 0.01);
-    assert_eq!(running(&app).as_deref(), Some("pasteclip"));
+    assert_eq!(running(&app), None);
+    assert!(app.session.doc().unwrap().model.len() > before, "the paste ran");
 }
 
 /// Input that answers the prompt of the command still running drops a paste held meanwhile: the

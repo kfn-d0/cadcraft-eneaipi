@@ -3,6 +3,7 @@ mod block_attribute_double_click;
 mod block_description_palette;
 mod chrome_geometry;
 mod clipboard_between_drawings;
+mod clipboard_safety;
 mod context_menu;
 mod context_menus;
 mod control_cmdline;

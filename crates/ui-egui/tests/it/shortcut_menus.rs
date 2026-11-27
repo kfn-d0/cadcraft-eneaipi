@@ -155,3 +155,29 @@ fn every_id_is_a_command() {
         );
     }
 }
+
+#[test]
+fn refused_shortcut_menu_command_is_logged_once_per_attempt() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    // A menu can outlive its layer: report the failed action once, without suppressing a
+    // deliberate retry of the same action.
+    let id = r#"run:layer.current:{"name":"Missing layer"}"#;
+    for _ in 0..2 {
+        let before = app.session.log.len();
+        sm::choose(&mut app, &ctx, id);
+        let output = &app.session.log[before..];
+        assert_eq!(output.len(), 1, "one error for each attempt: {output:?}");
+        assert!(!output[0].is_empty());
+    }
+}
+
+#[test]
+fn refused_ui_shortcut_menu_command_is_still_reported() {
+    let mut app = app();
+    let before = app.session.log.len();
+    sm::choose(&mut app, &egui::Context::default(), r#"run:ui.dock:{"operation":"invalid"}"#);
+    let output = &app.session.log[before..];
+    assert_eq!(output.len(), 1, "a UI command error remains visible: {output:?}");
+    assert!(!output[0].is_empty());
+}

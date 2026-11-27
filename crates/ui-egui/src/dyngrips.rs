@@ -161,9 +161,7 @@ pub(crate) fn click(app: &mut CadApp, (h, g): (Handle, DynGrip)) {
             .map(|p| p.value)
             .unwrap_or_default();
         let Some(next) = g.choices.iter().find(|c| !c.eq_ignore_ascii_case(&current)).cloned() else { return };
-        if let Err(e) = app.run("blocks.reference.set", json!({ "handle": h.hex(), "name": g.property, "value": next })) {
-            app.session.echo(e);
-        }
+        let _ = app.run("blocks.reference.set", json!({ "handle": h.hex(), "name": g.property, "value": next }));
         return;
     }
     if g.shape == GripShape::List {
@@ -207,9 +205,7 @@ pub(crate) fn menu(app: &mut CadApp, ctx: &egui::Context, xf: &Xf) {
     let clicked_elsewhere = !fresh && ctx.input(|i| i.pointer.any_pressed()) && !area.response.contains_pointer();
     if let Some(value) = chosen {
         app.canvas.dyn_menu = None;
-        if let Err(e) = app.run("blocks.reference.set", json!({ "handle": h.hex(), "name": g.property, "value": value })) {
-            app.session.echo(e);
-        }
+        let _ = app.run("blocks.reference.set", json!({ "handle": h.hex(), "name": g.property, "value": value }));
     } else if clicked_elsewhere || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.canvas.dyn_menu = None;
     }

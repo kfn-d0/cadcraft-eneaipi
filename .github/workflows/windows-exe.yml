@@ -1,10 +1,10 @@
 name: Windows exe
 
-# Builds cadcraft.exe (Windows x64, release) from this branch and keeps it as a downloadable
+# Builds cadcraft.exe (Windows x64, release) on every push to main and to melhorias-autocad and keeps it as a downloadable
 # artifact of the run. Unsigned, not packaged: for trying the branch out.
 on:
   push:
-    branches: [melhorias-autocad]
+    branches: [main, melhorias-autocad]
   workflow_dispatch:
 
 permissions:

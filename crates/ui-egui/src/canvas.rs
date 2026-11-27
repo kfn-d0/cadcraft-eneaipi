@@ -658,6 +658,15 @@ fn handle_double_click(app: &mut CadApp, ctx: DoubleClickContext<'_>) -> Option<
             app.start("eattedit");
             return None;
         }
+        // An annotation on the sheet edits in place before the double-click is used for
+        // viewport navigation. In MSPACE the ordinary model-space editing path below applies.
+        if !in_active
+            && app.session.running.is_none()
+            && app.session.state().is_ok_and(|st| st.mspace.is_none())
+            && (edit_text_at(app, pp) || edit_table_cell_at(app, pp))
+        {
+            return None;
+        }
         if !in_active {
             app.canvas.hot_grips.clear();
             app.session.pending_window = None;

@@ -155,7 +155,12 @@ pub fn choose(app: &mut CadApp, ctx: &egui::Context, id: &str) {
     if let Some(rest) = id.strip_prefix("run:") {
         let Some((command, params)) = rest.split_once(':') else { return };
         let params = serde_json::from_str(params).unwrap_or(Value::Null);
-        if let Err(e) = app.run(command, params) {
+        // Engine commands report their own errors through CadApp::run. UI-only commands
+        // can return an error without logging it, so report only an unreported failure.
+        let before = app.session.log.len();
+        if let Err(e) = app.run(command, params)
+            && app.session.log.len() == before
+        {
             app.session.echo(e);
         }
     } else if id == "cmdline:copy" {

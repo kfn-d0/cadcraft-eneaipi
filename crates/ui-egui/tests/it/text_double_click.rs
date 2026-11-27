@@ -1,6 +1,6 @@
 //! Double-clicking text with no command running edits it, as in AutoCAD (#842).
 
-use cadcraft_engine::doc::EntityKind;
+use cadcraft_engine::doc::{EntityKind, Space};
 use cadcraft_engine::geom::Vec2;
 use cadcraft_engine::{Input, Session};
 use cadcraft_ui_egui::{CadApp, Services};
@@ -9,7 +9,15 @@ use egui_kittest::Harness;
 use serde_json::json;
 
 fn harness() -> Harness<'static, CadApp> {
+    harness_in(None)
+}
+
+fn harness_in(layout: Option<&str>) -> Harness<'static, CadApp> {
     let mut app = CadApp::new(Session::new(), Services::default());
+    if let Some(name) = layout {
+        app.run("text", json!({ "at": [0, 0], "text": "Model stays unchanged", "height": 2.5 })).unwrap();
+        app.run("layout.set", json!({ "name": name })).unwrap();
+    }
     app.run("text", json!({ "at": [0, 0], "text": "HELLO", "height": 2.5 })).unwrap();
     app.run("mtext", json!({ "at": [0, 20], "text": "first\\Psecond", "height": 2.5, "width": 20 })).unwrap();
     app.run("line", json!({ "points": [[30, 0], [30, 20]] })).unwrap();
@@ -128,4 +136,43 @@ fn double_click_on_a_multileaders_text_starts_textedit() {
     assert_eq!(p.message, "Enter new text");
     assert_eq!(p.default.as_deref(), Some("example text"));
     assert!(s.editing_mtext().is_some(), "the in-place editor opens on it");
+}
+
+#[test]
+fn double_click_edits_text_on_each_sheet_without_entering_model_space() {
+    for layout in ["Layout1", "Layout2"] {
+        for (at, old) in [(Vec2::new(4.0, 1.2), "HELLO"), (Vec2::new(3.0, 18.8), "first\nsecond")] {
+            let mut h = harness_in(Some(layout));
+            let model = h.state().session.doc().unwrap().model.clone();
+            let paper = Space::Paper(layout.into());
+            let handle = h
+                .state()
+                .session
+                .doc()
+                .unwrap()
+                .space(&paper)
+                .unwrap()
+                .iter()
+                .find_map(|e| match &e.kind {
+                    EntityKind::Text(t) if t.value == old => Some(e.handle),
+                    EntityKind::MText(t) if t.contents.replace(r"\P", "\n") == old => Some(e.handle),
+                    _ => None,
+                })
+                .unwrap();
+            double_click(&mut h, at);
+            let s = &h.state().session;
+            assert!(s.state().unwrap().mspace.is_none(), "{layout}: still editing the sheet");
+            assert_eq!(s.current_prompt().unwrap().default.as_deref(), Some(old), "{layout}");
+            h.state_mut().session.input(Input::Text("edited on sheet".into())).unwrap();
+            h.run_steps(2);
+            let d = h.state().session.doc().unwrap();
+            let value = match &d.entity(handle).unwrap().kind {
+                EntityKind::Text(t) => &t.value,
+                EntityKind::MText(t) => &t.contents,
+                _ => panic!("not text"),
+            };
+            assert_eq!(value, "edited on sheet", "{layout}");
+            assert_eq!(d.model, model, "sheet edits leave model space unchanged");
+        }
+    }
 }

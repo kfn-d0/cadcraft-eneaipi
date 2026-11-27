@@ -441,9 +441,11 @@ fn without_late_answers_a_paste_after_the_next_frame_is_ordinary() {
     frame(&mut app, vec![]);
     assert_eq!(running(&app).as_deref(), Some("pasteclip"), "no answer: pasted without waiting for the deadline");
     app.session.cancel();
-    // Its answer coming late is retired: one Ctrl+V doesn't paste twice.
+    // Its answer coming late is retired: one Ctrl+V doesn't paste twice or log a second command.
+    let paste_starts = app.session.log.iter().filter(|line| line.as_str() == "Command: PASTECLIP").count();
     frame(&mut app, paste());
     assert_eq!(running(&app), None, "a late answer pastes nothing more");
+    assert_eq!(app.session.log.iter().filter(|line| line.as_str() == "Command: PASTECLIP").count(), paste_starts);
     // A Ctrl+V once that time has passed pastes.
     for _ in 0..110 {
         frame(&mut app, vec![]);

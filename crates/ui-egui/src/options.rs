@@ -160,6 +160,11 @@ pub struct UiOptions {
     pub check_updates_at_start: bool,
 }
 
+/// The revision of the right-click defaults a saved profile was written with: 2 since the
+/// time-sensitive right-click is off by default and Command mode shows the menu only when the
+/// prompt has options ([`UiOptions::default`]).
+const RIGHT_CLICK_DEFAULTS: u64 = 2;
+
 impl Default for UiOptions {
     fn default() -> Self {
         UiOptions {
@@ -494,6 +499,8 @@ impl CadApp {
             "selectionColor": color_json(self.options.selection_color),
             "snapMarkerSize": self.options.snap_marker_size,
             "timeSensitiveRightClick": self.options.time_sensitive_right_click,
+            // Marks a profile written with the right-click defaults below ([`RIGHT_CLICK_DEFAULTS`]).
+            "rightClickDefaults": RIGHT_CLICK_DEFAULTS,
             "rightClickDuration": self.options.right_click_hold_ms,
             "rightClickDefault": self.options.right_click_default.as_str(),
             "rightClickEdit": self.options.right_click_edit.as_str(),
@@ -520,6 +527,11 @@ impl CadApp {
             cadcraft_engine::cmd::file::restore_aliases(aliases);
         }
         let mut c = UiChanges::default();
+        // A profile saved before the right-click defaults changed holds the old ones (the
+        // time-sensitive right-click on, the menu always while a command runs) even if nobody
+        // chose them, since every option is saved. Those two are left at today's defaults once;
+        // the profile saved next carries the marker, and later choices are kept.
+        let old_right_click = v.get("rightClickDefaults").and_then(Value::as_u64).unwrap_or(0) < RIGHT_CLICK_DEFAULTS;
         for key in [
             "systemCursor",
             "modelBackground",
@@ -534,6 +546,9 @@ impl CadApp {
             "interfaceScale",
             "checkUpdatesAtStart",
         ] {
+            if old_right_click && matches!(key, "timeSensitiveRightClick" | "rightClickCommand") {
+                continue;
+            }
             if let Some(value) = v.get(key) {
                 let _ = parse_ui(key, value, &mut c);
             }

@@ -254,3 +254,21 @@ fn a_quick_right_click_on_a_selection_opens_the_menu_by_default() {
 {text}"
     );
 }
+
+/// A profile saved by a build that had the time-sensitive right-click on by default carries that
+/// value though nobody chose it; it loads with today's defaults. A profile saved since keeps the
+/// user's choice.
+#[test]
+fn an_old_profile_takes_the_new_right_click_defaults_once() {
+    let mut a = app();
+    a.load_profile(r#"{"version": 1, "timeSensitiveRightClick": true, "rightClickCommand": "menu", "rightClickDuration": 400}"#);
+    assert!(!a.options.time_sensitive_right_click, "the old default is not carried over");
+    assert_eq!(a.options.right_click_command, CommandClick::MenuWithOptions);
+    assert_eq!(a.options.right_click_hold_ms, 400, "other right-click settings still load");
+
+    // Turned on again and saved: the choice stays.
+    a.run("options", json!({"timeSensitiveRightClick": true})).unwrap();
+    let mut b = app();
+    b.load_profile(&a.profile_json());
+    assert!(b.options.time_sensitive_right_click);
+}

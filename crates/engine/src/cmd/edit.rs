@@ -48,18 +48,18 @@ pub fn specs() -> Vec<CommandSpec> {
             .key("Cmd+V")
             .params("{at?: [x,y]} (where the base point lands; default: the original coordinates)")
             .enabled(clipboard::has_clip)
-            .interactive(|_| Ok(Box::new(PasteM { mode: PasteMode::Clip }))),
+            .interactive(|s| Ok(Box::new(PasteM { mode: PasteMode::Clip, person: s.command_origin() == crate::Origin::Person }))),
         CommandSpec::new("pasteblock", "Paste as Block", run_pasteblock)
             .menu(&["Edit", "Paste as Block"])
             .key("Cmd+Shift+V")
             .params("{at?: [x,y]} (insertion point; default: the original coordinates)")
             .enabled(clipboard::has_clip)
-            .interactive(|_| Ok(Box::new(PasteM { mode: PasteMode::Block }))),
+            .interactive(|_| Ok(Box::new(PasteM { mode: PasteMode::Block, person: false }))),
         CommandSpec::new("pasteorig", "Paste to Original Coordinates", run_pasteorig)
             .menu(&["Edit", "Paste to Original Coordinates"])
             .params("{} (only into a drawing other than the one copied from)")
             .enabled(clipboard::can_paste_orig)
-            .interactive(|_| Ok(Box::new(PasteM { mode: PasteMode::Orig }))),
+            .interactive(|s| Ok(Box::new(PasteM { mode: PasteMode::Orig, person: s.command_origin() == crate::Origin::Person }))),
         CommandSpec::new("erase.selection", "Clear", run_clear).menu(&["Edit", "Clear"]).key("Delete").enabled(has_selection).params("{}"),
         CommandSpec::new("selectall", "Select All", run_selectall).menu(&["Edit", "Select All"]).key("Cmd+A").alias(&["ai_selall"]).noundo(),
         CommandSpec::new("ai_deselect", "Deselect All", run_deselect).params("{}").noundo(),
@@ -619,6 +619,30 @@ enum PasteMode {
 
 struct PasteM {
     mode: PasteMode,
+    /// A person started it (not a script or a routine, which give the insertion point).
+    person: bool,
+}
+
+/// Bring objects just pasted into view when any of them lies outside it: the view is fitted to
+/// them, as ZOOM Object does. A view that already shows them all is left as it is.
+fn show_pasted(s: &mut Session, hs: &[Handle]) {
+    let Ok(d) = s.doc() else { return };
+    let b = hs.iter().filter_map(|h| d.entity(*h)).fold(Bounds2::EMPTY, |a, e| a.union(&entity_bounds(d, e, 0)));
+    if b.is_empty() {
+        return;
+    }
+    let (w, h) = s.viewport_px;
+    let Ok(st) = s.state() else { return };
+    let v = st.zoom_frame();
+    let half = Vec2::new(v.height / 2.0 * st.zoom_aspect(w / h.max(1.0)), v.height / 2.0);
+    let shown = Bounds2::new(v.center - half, v.center + half);
+    if v.twist == 0.0 && shown.contains(b.min) && shown.contains(b.max) {
+        return;
+    }
+    let handles: Vec<String> = hs.iter().map(|h| h.hex()).collect();
+    if let Err(e) = super::view::zoom(s, &json!({ "mode": "object", "handles": handles })) {
+        s.echo(e.to_string());
+    }
 }
 
 impl Interactive for PasteM {
@@ -635,7 +659,19 @@ impl Interactive for PasteM {
             return Ok(Step::Done);
         }
         if self.mode == PasteMode::Orig {
-            paste(s, Vec2::ZERO)?;
+            let hs = paste(s, Vec2::ZERO)?;
+            if self.person {
+                show_pasted(s, &hs);
+            }
+            return Ok(Step::Done);
+        }
+        // Objects copied in another drawing (or another window) land where they were, as
+        // PASTEORIG puts them, and the view goes to them; within one drawing the insertion point
+        // is asked for, as AutoCAD does. Scripts and routines keep giving the point.
+        if self.mode == PasteMode::Clip && self.person && !clipboard::from_active(s) {
+            let hs = paste(s, Vec2::ZERO)?;
+            s.echo("Pasted at the original coordinates of the drawing it was copied from.");
+            show_pasted(s, &hs);
             return Ok(Step::Done);
         }
         Ok(Step::Continue)

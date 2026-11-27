@@ -50,10 +50,10 @@ fn direct_empty_clipboard_answer_cannot_consume_the_next_keyboard_paste() {
     assert!(!frame(&mut app, &ctx, 0.01, vec![]), "the host answered: no untagged paste request");
     let once = app.session.doc().unwrap().entity_count();
     assert!(once > 0, "the menu paste uses the drawing clipboard when there is no system text");
+    // The clipboard comes from another drawing: Ctrl+V pastes at the original coordinates.
     frame(&mut app, &ctx, 0.02, vec![Event::Paste("not DXF".into())]);
-    assert_eq!(app.session.running.as_ref().map(|r| r.id.as_str()), Some("pasteclip"), "the fresh Ctrl+V is not discarded");
-    app.session.input(cadcraft_engine::Input::Point(cadcraft_geom::Vec2::new(20.0, 20.0))).unwrap();
-    assert!(app.session.doc().unwrap().entity_count() > once, "the next paste really adds objects");
+    assert!(app.session.running.is_none());
+    assert!(app.session.doc().unwrap().entity_count() > once, "the fresh Ctrl+V is not discarded: it adds objects");
 }
 
 #[test]

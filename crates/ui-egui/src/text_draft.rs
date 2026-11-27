@@ -12,12 +12,8 @@ pub(crate) struct Draft {
 }
 
 pub(crate) fn stage(app: &mut CadApp, answers: Vec<Input>) {
-    app.text_draft = app.session.state().ok().map(|st| Draft {
-        doc: st.uid,
-        command: app.session.commands_started,
-        input: app.session.inputs,
-        answers,
-    });
+    app.text_draft =
+        app.session.state().ok().map(|st| Draft { doc: st.uid, command: app.session.commands_started, input: app.session.inputs, answers });
 }
 
 /// Refuse closing if the command cannot take the pending text. Stale drafts never reach a new target.
